@@ -531,6 +531,58 @@
       </div>`;
   }
 
+
+// Store truck data for onclick lookups
+  window._truckRegistry = {};
+
+  function openCarrierFromBoard(id) {
+    const t = window._truckRegistry[id];
+    if (t) openCarrierProfile(t.carrier, t.mc, t.phone);
+  }
+
+  function buildTruckGroupHtml(trucks, key) {
+    let html = '<div class="table-wrap">';
+    html += '<div class="table-row table-head">';
+    html += '<div class="th-dot"></div>';
+    html += '<div class="th th-carrier">Carrier</div>';
+    html += '<div class="th th-equip">Equipment</div>';
+    html += '<div class="th th-location">Location</div>';
+    html += '<div class="th th-posted">Posted</div>';
+    html += '<div class="th th-status">Status</div>';
+    html += '<div class="th th-claimed">Claimed by</div>';
+    html += '<div class="th th-actions">Notes / Actions</div>';
+    html += '</div>';
+
+    for (const t of trucks) {
+      window._truckRegistry[t.id] = t;
+      const isMine  = t.claimedBy === currentUser;
+      const claimed = t.claimedBy !== '';
+      const claimHtml = claimed
+        ? '<span class="claimed-by">' + t.claimedBy + '</span>' + (isMine ? '<button class="action-btn unclaim" onclick="unclaim(' + t.id + ')">Unclaim</button>' : '')
+        : '<button class="action-btn claim" onclick="claim(' + t.id + ')">Claim</button>';
+      const noteHtml = t.notes
+        ? '<span class="notes-trigger" onclick="openNotes(' + t.id + ')" title="' + t.notes.replace(/"/g,"'") + '">' + t.notes + '</span>'
+        : '<span class="notes-trigger" onclick="openNotes(' + t.id + ')" style="color:var(--gray-300);">+ add note</span>';
+
+      html += '<div class="truck-row-wrap' + (key === 'stale' ? ' stale' : '') + '">';
+      html += '<div class="table-row">';
+      html += '<div class="td-dot"><span class="dot ' + dotClass(t.posted) + '"></span></div>';
+      html += '<div class="td td-carrier">';
+      html += '<div class="carrier-name" onclick="openCarrierFromBoard(' + t.id + ')" style="cursor:pointer;">' + t.carrier + '</div>';
+      html += '<div class="carrier-mc">' + t.mc + ' &middot; <span class="cell-phone">' + t.phone + '</span></div>';
+      html += '</div>';
+      html += '<div class="td td-equip">' + t.equip + '</div>';
+      html += '<div class="td td-location">' + t.city + ', ' + t.state + '</div>';
+      html += '<div class="td td-posted"><span class="' + ageClass(t.posted) + '">' + ageLabel(t.posted) + '</span></div>';
+      html += '<div class="td td-status"><span class="badge ' + (t.status === 'Available' ? 'badge-avail' : 'badge-contact') + '">' + t.status + '</span></div>';
+      html += '<div class="td td-claimed"><div class="row-actions">' + claimHtml + '</div></div>';
+      html += '<div class="td td-actions"><div class="row-actions">' + noteHtml + '<button class="action-btn cover" onclick="markCovered(' + t.id + ')">Covered</button></div></div>';
+      html += '</div></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function renderBoard(boardCoords) {
     boardCoords = boardCoords || null;
     const trucks = loadTrucks();
@@ -589,45 +641,12 @@
 
     for (const [key, m] of Object.entries(meta)) {
       if (!groups[key].length) continue;
-      finalHtml += `<div class="section-divider${finalHtml===''?'':' section-gap'}">
-        <div class="divider-label"><span class="dot ${m.dot}" style="width:7px;height:7px;"></span>${m.label}</div>
-        <div class="divider-line"></div>
-        <div class="divider-count">${groups[key].length}</div>
-      </div>
-      <div class="table-wrap">
-        <div class="table-row table-head">
-          <div class="th-dot"></div>
-          <div class="th th-carrier">Carrier</div>
-          <div class="th th-equip">Equipment</div>
-          <div class="th th-location">Location</div>
-          <div class="th th-posted">Posted</div>
-          <div class="th th-status">Status</div>
-          <div class="th th-claimed">Claimed by</div>
-          <div class="th th-actions">Notes / Actions</div>
-        </div>
-        ${groups[key].map(t => {
-          const isMine = t.claimedBy === currentUser;
-          const claimed = t.claimedBy !== '';
-          const claimHtml = claimed
-            ? `<span class="claimed-by">${t.claimedBy}</span>${isMine?`<button class="action-btn unclaim" onclick="unclaim(${t.id})">Unclaim</button>`:''}`
-            : `<button class="action-btn claim" onclick="claim(${t.id})">Claim</button>`;
-          const noteHtml = t.notes
-            ? `<span class="notes-trigger" onclick="openNotes(${t.id})" title="${t.notes}">${t.notes}</span>`
-            : `<span class="notes-trigger" onclick="openNotes(${t.id})" style="color:var(--gray-300);">+ add note</span>`;
-          return `<div class="truck-row-wrap${key==='stale'?' stale':''}">
-            <div class="table-row">
-              <div class="td-dot"><span class="dot ${dotClass(t.posted)}"></span></div>
-              <div class="td td-carrier"><div class="carrier-name" onclick="openCarrierProfile('${t.carrier}','${t.mc}','${t.phone}')" style="cursor:pointer;">${t.carrier}</div><div class="carrier-mc">${t.mc} · <span class="cell-phone">${t.phone}</span></div></div>
-              <div class="td td-equip">${t.equip}</div>
-              <div class="td td-location">${t.city}, ${t.state}</div>
-              <div class="td td-posted"><span class="${ageClass(t.posted)}">${ageLabel(t.posted)}</span></div>
-              <div class="td td-status"><span class="badge ${t.status==='Available'?'badge-avail':'badge-contact'}">${t.status}</span></div>
-              <div class="td td-claimed"><div class="row-actions">${claimHtml}</div></div>
-              <div class="td td-actions"><div class="row-actions">${noteHtml}<button class="action-btn cover" onclick="markCovered(${t.id})">Covered</button></div></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
+      const isFirst = finalHtml === '';
+      finalHtml += '<div class="section-divider' + (isFirst ? '' : ' section-gap') + '">';
+      finalHtml += '<div class="divider-label"><span class="dot ' + m.dot + '" style="width:7px;height:7px;"></span>' + m.label + '</div>';
+      finalHtml += '<div class="divider-line"></div>';
+      finalHtml += '<div class="divider-count">' + groups[key].length + '</div></div>';
+      finalHtml += buildTruckGroupHtml(groups[key], key);
 
       // Insert inbound right after fresh section
       if (key === 'fresh' && inboundFiltered.length && !insertedInbound) {
@@ -642,7 +661,7 @@
     }
 
     if (!filtered.length && !inboundFiltered.length) {
-      finalHtml = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+      finalHtml = '<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>';
     }
 
     document.getElementById('boardArea').innerHTML = finalHtml;
