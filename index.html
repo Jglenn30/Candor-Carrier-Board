@@ -629,7 +629,6 @@
     const inbound = getInboundTrucks();
     const inboundFiltered = inbound.filter(t => {
       if (equipVal && !t.equip.toLowerCase().includes(equipVal)) return false;
-      if (stateVal && t.state !== stateVal) return false;
       if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
       if (searchVal && !t.carrier.toLowerCase().includes(searchVal) && !t.city.toLowerCase().includes(searchVal)) return false;
       return true;
