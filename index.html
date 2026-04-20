@@ -1,0 +1,2808 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAN·DOR — Carrier Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #6AAF4A; --green-light: #EAF3DE; --green-dark: #3B6D11;
+    --black: #141414; --gray-50: #F8F8F6; --gray-100: #F0EFEC;
+    --gray-200: #E2E1DC; --gray-300: #C8C7C0; --gray-400: #9A9991;
+    --gray-600: #5C5B55; --gray-800: #2E2D29;
+    --amber: #EF9F27; --amber-light: #FAEEDA; --amber-dark: #854F0B;
+    --red: #E24B4A; --red-light: #FCEBEB; --red-dark: #A32D2D;
+    --blue: #378ADD; --blue-light: #E6F1FB; --blue-dark: #185FA5;
+    --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    /* Fixed column widths */
+    --col-dot: 12px;
+    --col-carrier: 220px;
+    --col-equip: 150px;
+    --col-location: 140px;
+    --col-posted: 100px;
+    --col-status: 100px;
+    --col-claimed: 130px;
+    --col-actions: 200px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--gray-50); color: var(--black); min-height: 100vh; }
+
+  /* LOGIN */
+  .login-screen { position: fixed; inset: 0; background: var(--black); display: flex; align-items: center; justify-content: center; z-index: 1000; flex-direction: column; }
+  .login-screen.hidden { display: none; }
+  .login-logo { font-size: 28px; font-weight: 600; color: #fff; letter-spacing: 3px; margin-bottom: 6px; }
+  .login-logo span { color: var(--green); }
+  .login-tagline { font-size: 12px; color: var(--gray-400); letter-spacing: 1.5px; margin-bottom: 40px; text-transform: uppercase; }
+  .login-card { background: #1E1E1C; border: 1px solid #333; border-radius: var(--radius-lg); padding: 32px; width: 340px; }
+  .login-label { font-size: 12px; color: var(--gray-400); margin-bottom: 8px; letter-spacing: 0.5px; }
+  .login-select { width: 100%; height: 44px; background: #2A2A28; border: 1px solid #444; border-radius: var(--radius-md); padding: 0 14px; font-size: 14px; color: #fff; font-family: 'DM Sans', sans-serif; cursor: pointer; margin-bottom: 16px; }
+  .login-select option { background: #2A2A28; }
+  .login-btn { width: 100%; height: 44px; background: var(--green); border: none; border-radius: var(--radius-md); font-size: 14px; font-weight: 500; color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .login-btn:hover { background: #5A9F3A; }
+
+  /* NAV */
+  .nav { background: var(--black); padding: 0 28px; display: flex; align-items: center; justify-content: space-between; height: 52px; position: sticky; top: 0; z-index: 100; }
+  .nav-logo { font-size: 16px; font-weight: 600; color: #fff; letter-spacing: 2.5px; }
+  .nav-logo span { color: var(--green); }
+  .nav-links { display: flex; gap: 4px; }
+  .nav-link { font-size: 12px; color: var(--gray-400); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); transition: all 0.15s; }
+  .nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .nav-link.active { color: #fff; background: rgba(255,255,255,0.1); }
+  .nav-link.disabled { color: #444; cursor: default; }
+  .nav-link.disabled:hover { background: none; color: #444; }
+  .nav-user { font-size: 12px; color: var(--gray-400); display: flex; align-items: center; gap: 8px; }
+  .nav-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #fff; flex-shrink: 0; }
+  .sign-out { cursor: pointer; font-size: 11px; color: #555; }
+  .sign-out:hover { color: var(--gray-400); }
+
+  /* TOOLBAR */
+  .toolbar { background: #fff; border-bottom: 1px solid var(--gray-200); padding: 10px 28px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .toolbar-search { position: relative; }
+  .toolbar-search input { height: 36px; width: 220px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 0 12px 0 34px; font-size: 13px; color: var(--black); background: var(--gray-50); font-family: 'DM Sans', sans-serif; }
+  .toolbar-search input:focus { outline: none; border-color: var(--green); background: #fff; }
+  .s-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--gray-400); pointer-events: none; }
+  .filter-select { height: 36px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); padding: 0 10px; font-size: 13px; color: var(--gray-800); background: var(--gray-50); font-family: 'DM Sans', sans-serif; cursor: pointer; }
+  .filter-select:focus { outline: none; border-color: var(--green); }
+  .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .stat-pill { font-size: 12px; padding: 5px 12px; border-radius: 20px; background: var(--gray-100); color: var(--gray-600); border: 1px solid var(--gray-200); white-space: nowrap; }
+  .stat-pill strong { color: var(--black); }
+  .stat-pill.warn strong { color: var(--amber-dark); }
+  .add-btn { height: 36px; padding: 0 16px; background: var(--green); border: none; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
+  .add-btn:hover { background: #5A9F3A; }
+
+  /* CHIPS */
+  .chip-bar { background: #fff; border-bottom: 1px solid var(--gray-200); padding: 8px 28px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .chip-label { font-size: 11px; color: var(--gray-400); margin-right: 2px; white-space: nowrap; }
+  .chip { font-size: 12px; padding: 4px 12px; border-radius: 20px; border: 1px solid var(--gray-200); color: var(--gray-600); cursor: pointer; background: var(--gray-50); transition: all 0.15s; white-space: nowrap; user-select: none; }
+  .chip:hover { border-color: var(--gray-300); color: var(--black); }
+  .chip.active { background: var(--black); color: #fff; border-color: var(--black); }
+
+  /* BOARD */
+  .board { padding: 20px 28px; overflow-x: auto; }
+
+  /* TABLE — fixed column widths */
+  .table-wrap { background: #fff; border: 1px solid var(--gray-200); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow); min-width: 1060px; }
+  .table-row { display: flex; align-items: center; gap: 0; }
+  .table-head { background: var(--gray-50); border-bottom: 1px solid var(--gray-200); }
+  .th { font-size: 11px; color: var(--gray-400); font-weight: 500; letter-spacing: 0.4px; text-transform: uppercase; padding: 8px 12px; flex-shrink: 0; }
+  .td { font-size: 12px; color: var(--gray-600); padding: 12px 12px; flex-shrink: 0; overflow: hidden; }
+  .td-dot { width: var(--col-dot); padding: 12px 8px 12px 16px; flex-shrink: 0; display: flex; align-items: center; }
+  .th-dot { width: var(--col-dot); padding: 8px 8px 8px 16px; flex-shrink: 0; }
+  .td-carrier { width: var(--col-carrier); }
+  .th-carrier { width: var(--col-carrier); }
+  .td-equip { width: var(--col-equip); }
+  .th-equip { width: var(--col-equip); }
+  .td-location { width: var(--col-location); }
+  .th-location { width: var(--col-location); }
+  .td-posted { width: var(--col-posted); }
+  .th-posted { width: var(--col-posted); }
+  .td-status { width: var(--col-status); }
+  .th-status { width: var(--col-status); }
+  .td-claimed { width: var(--col-claimed); }
+  .th-claimed { width: var(--col-claimed); }
+  .td-actions { flex: 1; min-width: var(--col-actions); }
+  .th-actions { flex: 1; min-width: var(--col-actions); }
+
+  .truck-row-wrap { border-bottom: 1px solid var(--gray-100); transition: background 0.1s; }
+  .truck-row-wrap:last-child { border-bottom: none; }
+  .truck-row-wrap:hover { background: var(--gray-50); }
+  .truck-row-wrap.stale { opacity: 0.5; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: var(--green); }
+  .dot-yellow { background: var(--amber); }
+  .dot-red { background: var(--red); }
+  .carrier-name { font-size: 13px; font-weight: 500; color: var(--black); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .carrier-mc { font-size: 11px; color: var(--gray-400); font-family: 'DM Mono', monospace; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell-phone { color: var(--blue); cursor: pointer; }
+  .age-green { color: var(--green-dark); font-family: 'DM Mono', monospace; font-size: 12px; }
+  .age-amber { color: var(--amber-dark); font-family: 'DM Mono', monospace; font-size: 12px; }
+  .age-red { color: var(--red-dark); font-family: 'DM Mono', monospace; font-size: 12px; }
+  .badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; display: inline-block; font-weight: 500; white-space: nowrap; }
+  .badge-avail { background: var(--green-light); color: var(--green-dark); }
+  .badge-contact { background: var(--amber-light); color: var(--amber-dark); }
+  .row-actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+  .action-btn { font-size: 11px; padding: 3px 9px; border-radius: var(--radius-sm); border: 1px solid var(--gray-200); background: #fff; color: var(--gray-600); cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.15s; white-space: nowrap; }
+  .action-btn:hover { border-color: var(--gray-300); color: var(--black); }
+  .action-btn.claim { background: var(--blue-light); color: var(--blue-dark); border-color: #B5D4F4; }
+  .action-btn.unclaim { background: var(--gray-100); color: var(--gray-600); }
+  .action-btn.cover { background: var(--green-light); color: var(--green-dark); border-color: #C0DD97; }
+  .claimed-by { font-size: 11px; color: var(--blue-dark); background: var(--blue-light); padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+  .notes-trigger { font-size: 11px; color: var(--gray-400); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px; cursor: pointer; }
+  .notes-trigger:hover { color: var(--gray-600); }
+  .empty-state { padding: 32px; text-align: center; color: var(--gray-400); font-size: 13px; }
+  .legend { display: flex; gap: 14px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--gray-400); white-space: nowrap; }
+
+  /* SECTION DIVIDER */
+  .section-divider { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; margin-top: 4px; }
+  .section-divider + .section-divider { margin-top: 24px; }
+  .section-gap { margin-top: 20px; }
+  .divider-label { font-size: 11px; font-weight: 500; color: var(--gray-400); letter-spacing: 0.8px; text-transform: uppercase; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .divider-line { flex: 1; height: 1px; background: var(--gray-200); }
+  .divider-count { font-size: 11px; color: var(--gray-400); background: var(--gray-100); padding: 2px 8px; border-radius: 20px; }
+
+  /* MODALS */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 500; display: flex; align-items: center; justify-content: center; }
+  .modal-overlay.hidden { display: none; }
+  .modal { background: #fff; border-radius: var(--radius-lg); padding: 24px; width: 500px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
+  .modal-title { font-size: 16px; font-weight: 600; color: var(--black); margin-bottom: 20px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label { font-size: 11px; color: var(--gray-600); font-weight: 500; letter-spacing: 0.3px; }
+  .form-input { height: 38px; border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 0 10px; font-size: 13px; color: var(--black); font-family: 'DM Sans', sans-serif; background: var(--gray-50); width: 100%; }
+  .form-input:focus { outline: none; border-color: var(--green); background: #fff; }
+  .form-select { height: 38px; border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 0 10px; font-size: 13px; color: var(--black); font-family: 'DM Sans', sans-serif; background: var(--gray-50); width: 100%; }
+  .form-select:focus { outline: none; border-color: var(--green); }
+  .form-textarea { border: 1px solid var(--gray-200); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; color: var(--black); font-family: 'DM Sans', sans-serif; background: var(--gray-50); resize: none; width: 100%; }
+  .form-textarea:focus { outline: none; border-color: var(--green); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+  .btn-cancel { height: 38px; padding: 0 16px; border: 1px solid var(--gray-200); border-radius: var(--radius-md); background: #fff; color: var(--gray-600); font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .btn-submit { height: 38px; padding: 0 20px; border: none; border-radius: var(--radius-md); background: var(--green); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+  .btn-danger { height: 38px; padding: 0 16px; border: none; border-radius: var(--radius-md); background: var(--red-light); color: var(--red-dark); font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+
+  /* USER MANAGER */
+  .user-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-height: 260px; overflow-y: auto; }
+  .user-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); }
+  .user-item-name { font-size: 13px; color: var(--black); }
+  .user-item-role { font-size: 11px; color: var(--gray-400); margin-left: 8px; }
+  .user-remove { font-size: 11px; color: var(--red-dark); cursor: pointer; background: none; border: none; font-family: 'DM Sans', sans-serif; padding: 2px 6px; border-radius: var(--radius-sm); }
+  .user-remove:hover { background: var(--red-light); }
+  .add-user-row { display: flex; gap: 8px; }
+  .add-user-row .form-input { flex: 1; }
+  .divider-modal { height: 1px; background: var(--gray-200); margin: 16px 0; }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--black); color: #fff; font-size: 13px; padding: 12px 18px; border-radius: var(--radius-md); z-index: 9999; opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.green { background: var(--green-dark); }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-logo">CAN<span>·</span>DOR</div>
+  <div class="login-tagline">Carrier Intelligence Platform</div>
+  <div class="login-card">
+    <div class="login-label">Who are you?</div>
+    <select class="login-select" id="loginSelect">
+      <option value="">— select your name —</option>
+    </select>
+    <button class="login-btn" onclick="doLogin()">Enter</button>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-logo">CAN<span>·</span>DOR</div>
+  <div class="nav-links">
+    <div class="nav-link active">Truck board</div>
+    <div class="nav-link disabled">Lane search</div>
+    <div class="nav-link disabled">Carriers</div>
+    <div class="nav-link disabled">Rate intel</div>
+    <div class="nav-link disabled">Reports</div>
+    <div class="nav-link disabled">Admin</div>
+  </div>
+  <div class="nav-user">
+    <div class="nav-avatar" id="navAvatar">—</div>
+    <span id="navName" style="color:#fff;font-size:13px;">—</span>
+    <span class="sign-out" onclick="logout()">sign out</span>
+  </div>
+</nav>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="toolbar-search">
+    <svg class="s-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input type="text" placeholder="Search carrier or city..." id="searchInput" oninput="renderBoard()" />
+  </div>
+  <select class="filter-select" id="equipFilter" onchange="renderBoard()">
+    <option value="">All equipment</option>
+    <option>Dry van 53ft</option><option>Dry van 48ft</option>
+    <option>Reefer 53ft</option><option>Reefer 48ft</option>
+    <option>Flatbed</option><option>Sprinter</option>
+    <option>Reefer sprinter</option><option>Straight truck</option>
+    <option>Reefer straight truck</option><option>Power only</option>
+  </select>
+  <select class="filter-select" id="stateFilter" onchange="renderBoard()">
+    <option value="">All states</option>
+    <option>TN</option><option>TX</option><option>IL</option><option>GA</option>
+    <option>AR</option><option>KY</option><option>MS</option><option>AL</option>
+    <option>FL</option><option>OH</option><option>MO</option><option>IN</option>
+  </select>
+  <select class="filter-select" id="statusFilter" onchange="renderBoard()">
+    <option value="">All statuses</option>
+    <option>Available</option><option>Contacted</option>
+  </select>
+  <div class="toolbar-right">
+    <div class="stat-pill"><strong id="totalCount">0</strong> trucks</div>
+    <div class="stat-pill warn"><strong id="staleCount">0</strong> stale</div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot dot-green"></span>Fresh</div>
+      <div class="legend-item"><span class="dot dot-yellow"></span>Aging</div>
+      <div class="legend-item"><span class="dot dot-red"></span>Stale 48h+</div>
+    </div>
+    <button class="add-btn" onclick="openModal('truck')">+ Add truck</button>
+    <button class="add-btn" style="background:#2A2A28;" onclick="openModal('users')">Manage users</button>
+  </div>
+</div>
+
+<!-- CHIPS -->
+<div class="chip-bar">
+  <span class="chip-label">Quick filter:</span>
+  <span class="chip active" onclick="setChip(this,'')">All</span>
+  <span class="chip" onclick="setChip(this,'dry van')">Dry van</span>
+  <span class="chip" onclick="setChip(this,'reefer')">Reefer</span>
+  <span class="chip" onclick="setChip(this,'flatbed')">Flatbed</span>
+  <span class="chip" onclick="setChip(this,'sprinter')">Sprinter</span>
+  <span class="chip" onclick="setChip(this,'straight truck')">Straight truck</span>
+  <span class="chip" onclick="setChip(this,'stale')">Stale only</span>
+</div>
+
+<!-- BOARD -->
+<div class="board" id="boardArea"></div>
+
+<!-- ADD TRUCK MODAL -->
+<div class="modal-overlay hidden" id="truckModal">
+  <div class="modal">
+    <div class="modal-title">Add truck to board</div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label class="form-label">Carrier name</label>
+        <input class="form-input" id="f_carrier" placeholder="e.g. Midwest Freight LLC" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">MC number</label>
+        <input class="form-input" id="f_mc" placeholder="MC# 884421" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="f_phone" placeholder="(901) 555-0142" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">City</label>
+        <input class="form-input" id="f_city" placeholder="Memphis" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">State</label>
+        <input class="form-input" id="f_state" placeholder="TN" maxlength="2" style="text-transform:uppercase;" />
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Equipment type</label>
+        <select class="form-select" id="f_equip">
+          <option>Dry van 53ft</option><option>Dry van 48ft</option>
+          <option>Reefer 53ft</option><option>Reefer 48ft</option>
+          <option>Flatbed</option><option>Sprinter</option>
+          <option>Reefer sprinter</option><option>Straight truck</option>
+          <option>Reefer straight truck</option><option>Power only</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Notes (optional)</label>
+        <textarea class="form-textarea" id="f_notes" placeholder="e.g. Wants $2.55, available after 2pm..." style="height:60px;"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('truck')">Cancel</button>
+      <button class="btn-submit" onclick="submitTruck()">Add to board</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTES MODAL -->
+<div class="modal-overlay hidden" id="notesModal">
+  <div class="modal" style="width:380px;">
+    <div class="modal-title" id="notesCarrierName"></div>
+    <div style="font-size:12px;color:var(--gray-400);margin-bottom:12px;">Notes for this truck</div>
+    <textarea class="form-textarea" id="notesInput" style="height:100px;"></textarea>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('notes')">Cancel</button>
+      <button class="btn-submit" onclick="saveNotes()">Save note</button>
+    </div>
+  </div>
+</div>
+
+<!-- USER MANAGER MODAL -->
+<div class="modal-overlay hidden" id="usersModal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-title">Manage team users</div>
+    <div style="font-size:12px;color:var(--gray-400);margin-bottom:14px;">Add or remove people from the login screen. Changes take effect immediately.</div>
+    <div class="user-list" id="userList"></div>
+    <div class="divider-modal"></div>
+    <div style="font-size:12px;font-weight:500;color:var(--black);margin-bottom:10px;">Add new user</div>
+    <div class="add-user-row">
+      <input class="form-input" id="newUserName" placeholder="Full name (e.g. Sarah Johnson)" />
+      <button class="btn-submit" onclick="addUser()" style="white-space:nowrap;">Add</button>
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-cancel" onclick="closeModal('users')">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const TRUCKS_KEY = 'candor_trucks_v2';
+  const USER_KEY   = 'candor_user_v1';
+  const USERS_KEY  = 'candor_users_v1';
+
+  let currentUser = '';
+  let editingNotesId = null;
+  let chipFilter = '';
+
+  // ── DEFAULT USERS ──
+  const DEFAULT_USERS = [
+    'Craig Leger','Jon Fox','Mckayla Williamson','Peyton Padjen',
+    'Jay Glenn','Steve Ward','Chris Hull','Stiven Galindo'
+  ];
+
+  // ── DEFAULT TRUCKS ──
+  const DEFAULT_TRUCKS = [
+    { id:1, carrier:'Midwest Freight LLC', mc:'MC# 884421', phone:'(901) 555-0142', city:'Memphis', state:'TN', equip:'Dry van 53ft', posted:Date.now()-32*60*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:2, carrier:'Delta Carriers Inc', mc:'MC# 556231', phone:'(870) 555-0198', city:'West Memphis', state:'AR', equip:'Dry van 48ft', posted:Date.now()-75*60*1000, status:'Contacted', claimedBy:'Craig Leger', notes:'Called 10am, wants $2.55' },
+    { id:3, carrier:'Great Lakes Transport', mc:'MC# 901234', phone:'(312) 555-0177', city:'Chicago', state:'IL', equip:'Straight truck', posted:Date.now()-2.2*3600*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:4, carrier:'Swift Expedite Co', mc:'MC# 773109', phone:'(615) 555-0211', city:'Nashville', state:'TN', equip:'Sprinter', posted:Date.now()-3.5*3600*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:5, carrier:'Bluegrass Carriers', mc:'MC# 334812', phone:'(502) 555-0166', city:'Louisville', state:'KY', equip:'Reefer sprinter', posted:Date.now()-4.2*3600*1000, status:'Contacted', claimedBy:'Jon Fox', notes:'Waiting on callback' },
+    { id:6, carrier:'Lone Star Carriers', mc:'MC# 612847', phone:'(214) 555-0133', city:'Dallas', state:'TX', equip:'Dry van 53ft', posted:Date.now()-18*3600*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:7, carrier:'Gulf Coast Freight', mc:'MC# 445123', phone:'(713) 555-0188', city:'Houston', state:'TX', equip:'Reefer 53ft', posted:Date.now()-22*3600*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:8, carrier:'Dixie Transport Co', mc:'MC# 334872', phone:'(901) 555-0144', city:'Memphis', state:'TN', equip:'Dry van 53ft', posted:Date.now()-51*3600*1000, status:'Available', claimedBy:'', notes:'' },
+    { id:9, carrier:'Peach State Logistics', mc:'MC# 778234', phone:'(404) 555-0199', city:'Atlanta', state:'GA', equip:'Flatbed', posted:Date.now()-54*3600*1000, status:'Available', claimedBy:'', notes:'' },
+  ];
+
+  // ── STORAGE HELPERS ──
+  function loadUsers() {
+    try {
+      const u = localStorage.getItem(USERS_KEY);
+      if (u) {
+        const parsed = JSON.parse(u);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch(e) {}
+    // Always fall back to defaults
+    try { localStorage.setItem(USERS_KEY, JSON.stringify(DEFAULT_USERS)); } catch(e) {}
+    return [...DEFAULT_USERS];
+  }
+  function saveUsers(u) { localStorage.setItem(USERS_KEY, JSON.stringify(u)); }
+
+  function loadTrucks() {
+    try { const t = localStorage.getItem(TRUCKS_KEY); return t ? JSON.parse(t) : JSON.parse(JSON.stringify(DEFAULT_TRUCKS)); }
+    catch(e) { return JSON.parse(JSON.stringify(DEFAULT_TRUCKS)); }
+  }
+  function saveTrucks(t) {
+    localStorage.setItem(TRUCKS_KEY, JSON.stringify(t));
+    try { if(window.storage) window.storage.set('candor_trucks_v2', JSON.stringify(t), true).catch(()=>{}); } catch(e) {}
+  }
+
+  // ── POPULATE LOGIN ──
+  function populateLogin() {
+    const sel = document.getElementById('loginSelect');
+    // Always ensure defaults exist
+    let users = loadUsers();
+    if (!users || users.length === 0) {
+      users = [...DEFAULT_USERS];
+      saveUsers(users);
+    }
+    sel.innerHTML = '<option value="">— select your name —</option>';
+    users.forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = u; sel.appendChild(o); });
+  }
+
+  // ── LOGIN ──
+  function doLogin() {
+    const name = document.getElementById('loginSelect').value;
+    if (!name) { showToast('Please select your name'); return; }
+    currentUser = name;
+    localStorage.setItem(USER_KEY, name);
+    document.getElementById('loginScreen').classList.add('hidden');
+    setNavUser(name);
+    renderBoard();
+  }
+  function setNavUser(name) {
+    const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+    document.getElementById('navAvatar').textContent = initials;
+    document.getElementById('navName').textContent = name;
+  }
+  function logout() {
+    localStorage.removeItem(USER_KEY);
+    currentUser = '';
+    updateHistoryStats();
+        populateLogin();
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('navAvatar').textContent = '—';
+    document.getElementById('navName').textContent = '—';
+  }
+
+  // ── USER MANAGER ──
+  function renderUserList() {
+    const users = loadUsers();
+    const ul = document.getElementById('userList');
+    if (!users.length) { ul.innerHTML = '<div style="font-size:12px;color:var(--gray-400);padding:8px;">No users yet.</div>'; return; }
+    ul.innerHTML = users.map(u => `
+      <div class="user-item">
+        <div><span class="user-item-name">${u}</span></div>
+        <button class="user-remove" onclick="removeUser('${u}')">Remove</button>
+      </div>`).join('');
+  }
+  function addUser() {
+    const input = document.getElementById('newUserName');
+    const name = input.value.trim();
+    if (!name) { showToast('Enter a name first'); return; }
+    const users = loadUsers();
+    if (users.includes(name)) { showToast('Already on the list'); return; }
+    users.push(name);
+    saveUsers(users);
+    input.value = '';
+    renderUserList();
+    showToast(`${name} added`, 'green');
+  }
+  function removeUser(name) {
+    if (name === currentUser) { showToast("You can't remove yourself while logged in"); return; }
+    const users = loadUsers().filter(u => u !== name);
+    saveUsers(users);
+    renderUserList();
+    showToast(`${name} removed`);
+  }
+
+  // ── TIME HELPERS ──
+  function ageLabel(p) {
+    const m = Math.floor((Date.now()-p)/60000);
+    if (m < 60) return m+'m ago';
+    const h = Math.floor(m/60);
+    if (h < 24) return h+'h ago';
+    return Math.floor(h/24)+'d ago';
+  }
+  function ageClass(p) { const h=(Date.now()-p)/3600000; return h<12?'age-green':h<48?'age-amber':'age-red'; }
+  function dotClass(p) { const h=(Date.now()-p)/3600000; return h<12?'dot-green':h<48?'dot-yellow':'dot-red'; }
+  function group(p) { const h=(Date.now()-p)/3600000; return h<12?'fresh':h<48?'aging':'stale'; }
+
+  // ── RENDER BOARD ──
+  function renderBoard() {
+    const trucks = loadTrucks();
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const equip  = document.getElementById('equipFilter').value.toLowerCase();
+    const state  = document.getElementById('stateFilter').value;
+    const status = document.getElementById('statusFilter').value;
+
+    const filtered = trucks.filter(t => {
+      if (search && !t.carrier.toLowerCase().includes(search) && !t.city.toLowerCase().includes(search)) return false;
+      if (equip && !t.equip.toLowerCase().includes(equip)) return false;
+      if (state && t.state !== state) return false;
+      if (status && t.status !== status) return false;
+      if (chipFilter === 'stale' && group(t.posted) !== 'stale') return false;
+      if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
+      return true;
+    });
+
+    document.getElementById('totalCount').textContent = filtered.length;
+    document.getElementById('staleCount').textContent = filtered.filter(t=>group(t.posted)==='stale').length;
+
+    const groups = { fresh:[], aging:[], stale:[] };
+    filtered.forEach(t => groups[group(t.posted)].push(t));
+
+    const meta = {
+      fresh: { label:'Fresh — posted today', dot:'dot-green' },
+      aging: { label:'Aging — posted yesterday', dot:'dot-yellow' },
+      stale: { label:'Stale — 48hrs+', dot:'dot-red' }
+    };
+
+    let html = '';
+    let first = true;
+    for (const [key, m] of Object.entries(meta)) {
+      if (!groups[key].length) continue;
+      html += `<div class="section-divider${first?'':' section-gap'}">
+        <div class="divider-label"><span class="dot ${m.dot}" style="width:7px;height:7px;"></span>${m.label}</div>
+        <div class="divider-line"></div>
+        <div class="divider-count">${groups[key].length}</div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-row table-head">
+          <div class="th-dot"></div>
+          <div class="th th-carrier">Carrier</div>
+          <div class="th th-equip">Equipment</div>
+          <div class="th th-location">Location</div>
+          <div class="th th-posted">Posted</div>
+          <div class="th th-status">Status</div>
+          <div class="th th-claimed">Claimed by</div>
+          <div class="th th-actions">Notes / Actions</div>
+        </div>`;
+      groups[key].forEach(t => {
+        const isMine = t.claimedBy === currentUser;
+        const claimed = t.claimedBy !== '';
+        const claimHtml = claimed
+          ? `<span class="claimed-by">${t.claimedBy}</span>${isMine?`<button class="action-btn unclaim" onclick="unclaim(${t.id})">Unclaim</button>`:''}`
+          : `<button class="action-btn claim" onclick="claim(${t.id})">Claim</button>`;
+        const noteHtml = t.notes
+          ? `<span class="notes-trigger" onclick="openNotes(${t.id})" title="${t.notes}">${t.notes}</span>`
+          : `<span class="notes-trigger" onclick="openNotes(${t.id})" style="color:var(--gray-300);">+ add note</span>`;
+        html += `<div class="truck-row-wrap${key==='stale'?' stale':''}">
+          <div class="table-row">
+            <div class="td-dot"><span class="dot ${dotClass(t.posted)}"></span></div>
+            <div class="td td-carrier"><div class="carrier-name">${t.carrier}</div><div class="carrier-mc">${t.mc} · <span class="cell-phone">${t.phone}</span></div></div>
+            <div class="td td-equip">${t.equip}</div>
+            <div class="td td-location">${t.city}, ${t.state}</div>
+            <div class="td td-posted"><span class="${ageClass(t.posted)}">${ageLabel(t.posted)}</span></div>
+            <div class="td td-status"><span class="badge ${t.status==='Available'?'badge-avail':'badge-contact'}">${t.status}</span></div>
+            <div class="td td-claimed"><div class="row-actions">${claimHtml}</div></div>
+            <div class="td td-actions"><div class="row-actions">${noteHtml}<button class="action-btn cover" onclick="markCovered(${t.id})">Covered</button></div></div>
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+      first = false;
+    }
+    if (!filtered.length) html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+    document.getElementById('boardArea').innerHTML = html;
+  }
+
+  // ── ACTIONS ──
+  function claim(id) {
+    const trucks = loadTrucks();
+    const t = trucks.find(t=>t.id===id);
+    if (!t) return;
+    if (t.claimedBy && t.claimedBy !== currentUser) { showToast(`Already claimed by ${t.claimedBy}`); return; }
+    t.claimedBy = currentUser; t.status = 'Contacted';
+    saveTrucks(trucks); renderBoard(); showToast(`Claimed`, 'green');
+  }
+  function unclaim(id) {
+    const trucks = loadTrucks();
+    const t = trucks.find(t=>t.id===id);
+    if (t) { t.claimedBy = ''; t.status = 'Available'; }
+    saveTrucks(trucks); renderBoard(); showToast('Unclaimed');
+  }
+  function markCovered(id) {
+    saveTrucks(loadTrucks().filter(t=>t.id!==id));
+    renderBoard(); showToast('Marked covered and removed', 'green');
+  }
+  function openNotes(id) {
+    const t = loadTrucks().find(t=>t.id===id);
+    editingNotesId = id;
+    document.getElementById('notesCarrierName').textContent = t.carrier;
+    document.getElementById('notesInput').value = t.notes || '';
+    document.getElementById('notesModal').classList.remove('hidden');
+    setTimeout(()=>document.getElementById('notesInput').focus(),50);
+  }
+  function saveNotes() {
+    const trucks = loadTrucks();
+    const t = trucks.find(t=>t.id===editingNotesId);
+    if (t) { t.notes = document.getElementById('notesInput').value; saveTrucks(trucks); }
+    closeModal('notes'); renderBoard(); showToast('Note saved','green');
+  }
+
+  // ── TRUCK FORM ──
+  function submitTruck() {
+    const carrier = document.getElementById('f_carrier').value.trim();
+    const city    = document.getElementById('f_city').value.trim();
+    const state   = document.getElementById('f_state').value.trim().toUpperCase();
+    if (!carrier||!city||!state) { showToast('Carrier, city, and state are required'); return; }
+    const trucks = loadTrucks();
+    trucks.unshift({ id:Date.now(), carrier, mc:document.getElementById('f_mc').value.trim()||'—', phone:document.getElementById('f_phone').value.trim()||'—', city, state, equip:document.getElementById('f_equip').value, posted:Date.now(), status:'Available', claimedBy:'', notes:document.getElementById('f_notes').value.trim() });
+    saveTrucks(trucks); closeModal('truck'); renderBoard(); showToast(`${carrier} added`, 'green');
+  }
+
+  // ── MODAL OPEN/CLOSE ──
+  function openModal(type) {
+    if (type==='users') { renderUserList(); document.getElementById('usersModal').classList.remove('hidden'); return; }
+    if (type==='truck') { document.getElementById('truckModal').classList.remove('hidden'); setTimeout(()=>document.getElementById('f_carrier').focus(),50); return; }
+    if (type==='notes') { document.getElementById('notesModal').classList.remove('hidden'); return; }
+  }
+  function closeModal(type) {
+    if (type==='truck') { document.getElementById('truckModal').classList.add('hidden'); ['f_carrier','f_mc','f_phone','f_city','f_state','f_notes'].forEach(id=>document.getElementById(id).value=''); }
+    if (type==='notes') { document.getElementById('notesModal').classList.add('hidden'); editingNotesId=null; }
+    if (type==='users') { document.getElementById('usersModal').classList.add('hidden'); }
+  }
+
+  // ── CHIPS ──
+  function setChip(el, val) {
+    document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    chipFilter = val;
+    document.getElementById('equipFilter').value = '';
+    renderBoard();
+  }
+
+  // ── TOAST ──
+  function showToast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show'+(type?' '+type:'');
+    setTimeout(()=>t.classList.remove('show'),2500);
+  }
+
+  // ── CLOSE ON OVERLAY CLICK ──
+  ['truckModal','notesModal','usersModal'].forEach(id => {
+    document.getElementById(id).addEventListener('click', e => { if(e.target.id===id) closeModal(id.replace('Modal','')); });
+  });
+
+  // ── ENTER KEY FOR ADD USER ──
+  document.getElementById('newUserName').addEventListener('keydown', e => { if(e.key==='Enter') addUser(); });
+
+  // ── INIT ──
+  async function init() {
+    try { if(window.storage) { const r = await window.storage.get('candor_trucks_v2',true); if(r&&r.value) localStorage.setItem(TRUCKS_KEY,r.value); } } catch(e) {}
+    populateLogin();
+    const saved = localStorage.getItem(USER_KEY);
+    if (saved && saved.trim()) {
+      currentUser = saved;
+      document.getElementById('loginScreen').classList.add('hidden');
+      setNavUser(saved);
+      renderBoard();
+    }
+    setInterval(renderBoard, 60000);
+  }
+  // init called via DOMContentLoaded below
+
+  // ── ADMIN PAGE ──
+  let parsedTrucks = [];
+  let flaggedEquipment = JSON.parse(localStorage.getItem('candor_flags_v1') || '[]');
+  const IMPORT_LOG_KEY = 'candor_imports_v1';
+
+  const KNOWN_EQUIPMENT = [
+    'Dry van 53ft','Dry van 48ft','Reefer 53ft','Reefer 48ft',
+    'Flatbed','Sprinter','Reefer sprinter','Straight truck',
+    'Reefer straight truck','Power only','Conestoga','Step deck'
+  ];
+
+  const EQUIP_MAP = {
+    'van - sprinter':'Sprinter','van - dry':'Dry van 53ft',
+    'dry van':'Dry van 53ft','sprinter van':'Sprinter',
+    'straight truck':'Straight truck','reefer':'Reefer 53ft',
+    'flatbed':'Flatbed','power only':'Power only',
+    'step deck':'Step deck','conestoga':'Conestoga',
+    'reefer sprinter':'Reefer sprinter','van':'Dry van 53ft',
+    'dry':'Dry van 53ft','refrigerated':'Reefer 53ft'
+  };
+
+  function normalizeEquip(raw) {
+    if (!raw) return null;
+    const lower = raw.toLowerCase().trim();
+    for (const [k,v] of Object.entries(EQUIP_MAP)) {
+      if (lower.includes(k)) return v;
+    }
+    return null;
+  }
+
+  function showPage(page) {
+    document.getElementById('boardArea').style.display              = page==='board'?'':'none';
+    document.querySelector('.toolbar').style.display                 = page==='board'?'':'none';
+    document.querySelector('.chip-bar').style.display                = page==='board'?'':'none';
+    document.getElementById('adminPage').style.display               = page==='admin'?'':'none';
+    document.getElementById('laneSearchPage').style.display          = page==='lane'?'':'none';
+    document.getElementById('carrierProfilePage').style.display      = page==='carrier'?'':'none';
+    document.getElementById('rateIntelPage').style.display           = page==='rate'?'':'none';
+    document.getElementById('reportsPage').style.display             = page==='reports'?'':'none';
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    if (page==='board')   document.querySelectorAll('.nav-link')[0].classList.add('active');
+    if (page==='lane')    document.querySelectorAll('.nav-link')[1].classList.add('active');
+    if (page==='carrier') document.querySelectorAll('.nav-link')[2].classList.add('active');
+    if (page==='rate')    document.querySelectorAll('.nav-link')[3].classList.add('active');
+    if (page==='reports') document.querySelectorAll('.nav-link')[4].classList.add('active');
+    if (page==='admin')   document.querySelectorAll('.nav-link')[5].classList.add('active');
+    if (page==='reports') renderReports();
+    if (page==='rate')    renderReports();
+  }
+
+
+  // ── PARSER ENGINE ──
+  const US_STATES = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
+
+  const EQUIP_MAP_OBJ = {
+    'dry van':'Dry van 53ft','sprinter van':'Sprinter','reefer sprinter':'Reefer sprinter',
+    'straight truck':'Straight truck','step deck':'Step deck','power only':'Power only',
+    'conestoga':'Conestoga','sprinter':'Sprinter','flatbed':'Flatbed',
+    'reefer':'Reefer 53ft','dry':'Dry van 53ft','van':'Dry van 53ft',
+    'van - dry':'Dry van 53ft','van - sprinter':'Sprinter'
+  };
+  const EQUIP_KEYS = Object.keys(EQUIP_MAP_OBJ).sort((a,b)=>b.length-a.length);
+
+  function normalizeEquip(raw) {
+    if (!raw) return null;
+    const lower = raw.toLowerCase();
+    for (const k of EQUIP_KEYS) { if (lower.includes(k)) return EQUIP_MAP_OBJ[k]; }
+    return null;
+  }
+
+  const JUNK_RE = /\b(vans?|trucks?|in|at|near|have|our|available|ready|now|and|the|with|a|an|\d+x?|we|hi|team|hello|located)\b/gi;
+  function cleanCity(raw) {
+    const c = raw.replace(JUNK_RE,' ').replace(/\s{2,}/g,' ').trim();
+    return c.length >= 2 ? c.replace(/\b\w/g,ch=>ch.toUpperCase()) : null;
+  }
+
+  const EP = '(dry\\s*van|sprinter\\s*van|reefer\\s*sprinter|straight\\s*truck|step\\s*deck|power\\s*only|conestoga|sprinter|flatbed|reefer|dry\\b|van\\b)';
+  const CP = '([A-Z][a-zA-Z]+(?:\\s[A-Z][a-zA-Z]+){0,3})';
+  const SP = '(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)';
+
+  const PARSE_PATTERNS = [
+    { re: new RegExp(EP+'[^.\\n]{0,60}?\\bin\\s+'+CP+'\\s*,?\\s*\\b'+SP+'\\b','gi'), order:'ecs' },
+    { re: new RegExp(EP+'\\s*[-\u2013\u2014]\\s*'+CP+'\\s*,\\s*'+SP+'\\b','gi'), order:'ecs' },
+    { re: new RegExp(EP+'\\s+'+CP+'\\s*,\\s*'+SP+'\\b','gi'), order:'ecs' },
+    { re: new RegExp(CP+'\\s*,\\s*'+SP+'[^.\\n]{0,30}?'+EP,'gi'), order:'cse' },
+    { re: new RegExp(EP+'(?:\\s+(?:available|ready|located))?\\s*[-\u2013\u2014]?\\s*'+CP+'\\s*,?\\s*\\b'+SP+'\\b','gi'), order:'ecs' },
+  ];
+
+  function parseCarrierList() {
+    const text = document.getElementById('pasteArea').value.trim();
+    if (!text) { showToast('Paste a carrier list first'); return; }
+    parsedTrucks = [];
+
+    // ── DETECT FORMAT ──
+    // If text has date pattern YYYY-MM-DD and no spaces between city/state/equip
+    // it's a concatenated table format (like Square One Transport)
+    const isConcatFormat = /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+EDT/.test(text) &&
+                           text.includes('Payload');
+    if (isConcatFormat) {
+      parseConcatFormat(text);
+      return;
+    }
+
+    const mcMatch      = text.match(/MC#?\s*([0-9]+)/i);
+    const phoneMatch   = text.match(/\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}/);
+    const carrierMatch = text.match(/([A-Z][A-Za-z0-9\s&.,]{2,55}(?:LLC|INC|CORP|TRANSPORT|FREIGHT|CARRIER|EXPRESS|LOGISTICS|MOVING|SOLUTIONS?))/i);
+
+    const carrier = carrierMatch ? carrierMatch[1].trim().replace(/[.,\-\s]+$/,'') : 'Unknown Carrier';
+    const mc    = mcMatch    ? 'MC# ' + mcMatch[1]   : '—';
+    const phone = phoneMatch ? phoneMatch[0]          : '—';
+
+    const seen = new Set();
+    const segments = text.split(/[\n.]/);
+
+    for (const rawSeg of segments) {
+      const seg = rawSeg.trim().replace(/^[-•*\t\s]+/,'');
+      if (seg.length < 4) continue;
+
+      for (const {re, order} of PARSE_PATTERNS) {
+        re.lastIndex = 0;
+        let m;
+        while ((m = re.exec(seg)) !== null) {
+          let equip_raw, city_raw, state;
+          if (order === 'cse') { city_raw=m[1]; state=m[2]; equip_raw=m[3]; }
+          else                  { equip_raw=m[1]; city_raw=m[2]; state=m[3]; }
+
+          state = (state||'').trim().toUpperCase();
+          if (!US_STATES.has(state)) continue;
+          const city = cleanCity(city_raw||'');
+          if (!city || city.length < 2) continue;
+          const equip = normalizeEquip(equip_raw) || (equip_raw||'').trim();
+          if (!equip) continue;
+          const key = city.toLowerCase()+'|'+state+'|'+equip;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          // Check for new equipment type
+          if (!normalizeEquip(equip_raw) && equip_raw) {
+            const existing = flaggedEquipment.find(f=>f.raw.toLowerCase()===equip_raw.toLowerCase());
+            if (!existing) {
+              flaggedEquipment.push({raw:equip_raw,carrier,seen:1,date:new Date().toLocaleDateString()});
+              localStorage.setItem('candor_flags_v1',JSON.stringify(flaggedEquipment));
+            } else { existing.seen++; }
+          }
+
+          parsedTrucks.push({
+            id:Date.now()+Math.random(), carrier, mc, phone, city, state, equip,
+            rawEquip:equip_raw, isNew:!normalizeEquip(equip_raw),
+            posted:Date.now(), status:'Available', claimedBy:'', notes:'', include:true
+          });
+        }
+      }
+    }
+
+    if (!parsedTrucks.length) {
+      showToast('Could not find any trucks — check that city/state and equipment type are present');
+      return;
+    }
+    renderPreview();
+    renderFlagList();
+    renderEquipList();
+  }
+
+
+
+  // ── CONCAT TABLE FORMAT PARSER (e.g. Square One Transport) ──
+  function parseConcatFormat(text) {
+    const US_ST = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
+    const CONCAT_EQUIP = {
+      'Cargo Van':'Sprinter','Sprinter Van':'Sprinter',
+      'Small Straight':'Straight truck','Large Straight':'Straight truck',
+      'Tractor Trailer':'Dry van 53ft','Straight Truck':'Straight truck',
+      'Cargo Sprinter':'Sprinter','Box Truck':'Straight truck',
+    };
+
+    // Extract carrier name and phone from header
+    const carrierMatch = text.match(/(?:Available vehicles for|from)\s+([A-Z][\w\s]+?)\s+(?:as of|Inc|LLC)/i);
+    const phoneMatch   = text.match(/\d{10,11}/);
+    const emailMatch   = text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
+
+    const carrier = carrierMatch ? carrierMatch[1].trim() : 'Unknown Carrier';
+    const phone   = phoneMatch   ? phoneMatch[0].replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, '($2) $3-$4') : '—';
+
+    // Find table section after "Payload" header
+    const tableStart = text.indexOf('Payload');
+    if (tableStart === -1) { showToast('Could not find table data'); return; }
+    const table = text.substring(tableStart + 7);
+
+    // Pattern anchored on the date stamp YYYY-MM-DD HH:MM EDT
+    const STATE_PAT = '(' + [...US_ST].join('|') + ')';
+    const rowPat = new RegExp(
+      '([A-Z][a-zA-Z]+(?:\\s[A-Z][a-zA-Z]+){0,3})' +  // City
+      STATE_PAT +                                           // State
+      '(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+EDT)' + // Date
+      '([A-Z][a-zA-Z\\s]+?)' +                          // Vehicle class
+      '(\\d+\\s+lbs)',                                 // Payload
+      'g'
+    );
+
+    const seen = new Set();
+    let m;
+    while ((m = rowPat.exec(table)) !== null) {
+      const city      = m[1].trim();
+      const state     = m[2].trim();
+      const equip_raw = m[4].trim();
+      const equip     = CONCAT_EQUIP[equip_raw] || equip_raw;
+      const key = city.toLowerCase()+'|'+state+'|'+equip;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      parsedTrucks.push({
+        id: Date.now()+Math.random(),
+        carrier, mc:'—', phone, city, state, equip,
+        rawEquip: equip_raw, isNew: !CONCAT_EQUIP[equip_raw],
+        posted: Date.now(), status:'Available',
+        claimedBy:'', notes:'', include:true
+      });
+    }
+
+    if (!parsedTrucks.length) {
+      showToast('Could not parse table — try copying the full email including the vehicle list');
+      return;
+    }
+    renderPreview();
+    renderFlagList();
+    renderEquipList();
+  }
+
+  function renderPreview() {
+    const card = document.getElementById('previewCard');
+    if (!parsedTrucks.length) {
+      showToast('Could not parse any trucks — check the format and try again');
+      return;
+    }
+    card.style.display = '';
+    document.getElementById('previewSubtitle').textContent =
+      parsedTrucks.length + ' truck' + (parsedTrucks.length!==1?'s':'') + ' found — check and add to board';
+
+    const rows = parsedTrucks.map((t,i) => `
+      <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 12px;${t.isNew?'background:#FEFDF0;':''}" id="prow_${i}">
+        <div style="width:40px;flex-shrink:0;">
+          <input type="checkbox" checked onchange="parsedTrucks[${i}].include=this.checked" style="width:16px;height:16px;cursor:pointer;" />
+        </div>
+        <div style="width:200px;flex-shrink:0;">
+          <div style="font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.carrier}</div>
+          <div style="font-size:11px;color:var(--gray-400);font-family:'DM Mono',monospace;">${t.mc}</div>
+        </div>
+        <div style="width:150px;flex-shrink:0;">
+          <div style="font-size:12px;color:var(--gray-600);">${t.equip}</div>
+          ${t.isNew?'<div style="font-size:10px;color:var(--amber-dark);background:var(--amber-light);padding:1px 6px;border-radius:20px;display:inline-block;margin-top:2px;">New type — flagged</div>':''}
+        </div>
+        <div style="width:160px;flex-shrink:0;font-size:12px;color:var(--gray-600);">${t.city}, ${t.state}</div>
+        <div style="width:120px;flex-shrink:0;font-size:12px;color:var(--blue);font-family:'DM Mono',monospace;">${t.phone}</div>
+        <div style="flex:1;">
+          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">New</span>
+        </div>
+      </div>`).join('');
+    document.getElementById('previewRows').innerHTML = rows;
+  }
+
+  function addAllToBoard() {
+    const toAdd = parsedTrucks.filter(t=>t.include);
+    if (!toAdd.length) { showToast('No trucks selected'); return; }
+    const trucks = loadTrucks();
+    toAdd.forEach(t => trucks.unshift({...t, id: Date.now()+Math.random()}));
+    saveTrucks(trucks);
+    logImport(toAdd);
+    discardPreview();
+    showPage('board');
+    renderBoard();
+    showToast(toAdd.length + ' truck' + (toAdd.length!==1?'s':'') + ' added to the board', 'green');
+  }
+
+  function addSelectedToBoard() { addAllToBoard(); }
+
+  function discardPreview() {
+    parsedTrucks = [];
+    document.getElementById('previewCard').style.display = 'none';
+    document.getElementById('pasteArea').value = '';
+  }
+
+  function logImport(trucks) {
+    const logs = JSON.parse(localStorage.getItem(IMPORT_LOG_KEY) || '[]');
+    logs.unshift({ date: new Date().toLocaleString(), count: trucks.length, carrier: trucks[0]?.carrier || 'Unknown', user: currentUser });
+    if (logs.length > 10) logs.pop();
+    localStorage.setItem(IMPORT_LOG_KEY, JSON.stringify(logs));
+    renderImportLog();
+  }
+
+  function renderImportLog() {
+    const logs = JSON.parse(localStorage.getItem(IMPORT_LOG_KEY) || '[]');
+    const el = document.getElementById('importLog');
+    if (!logs.length) { el.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No imports yet</div>'; return; }
+    el.innerHTML = logs.map(l => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--gray-100);font-size:12px;">
+        <div>
+          <div style="font-weight:500;color:var(--black);">${l.carrier}</div>
+          <div style="color:var(--gray-400);margin-top:1px;">${l.date} · by ${l.user}</div>
+        </div>
+        <div style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">+${l.count} truck${l.count!==1?'s':''}</div>
+      </div>`).join('');
+  }
+
+  function renderFlagList() {
+    const el = document.getElementById('flagList');
+    const fc = document.getElementById('flagCount');
+    if (!flaggedEquipment.length) {
+      el.innerHTML = '<div style="font-size:12px;color:var(--gray-400);">No new equipment types flagged yet.</div>';
+      fc.style.display = 'none';
+      return;
+    }
+    fc.style.display = '';
+    fc.textContent = flaggedEquipment.length + ' pending';
+    el.innerHTML = flaggedEquipment.map((f,i) => `
+      <div style="border:1px solid var(--amber-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;background:#FEFDF0;">
+        <div style="font-size:12px;font-weight:500;color:var(--black);margin-bottom:3px;">"${f.raw}"</div>
+        <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">From ${f.carrier} · ${f.date} · seen ${f.seen} time${f.seen!==1?'s':''}</div>
+        <div style="display:flex;gap:6px;">
+          <button onclick="approveFlag(${i})" style="font-size:11px;padding:3px 10px;border-radius:var(--radius-sm);border:1px solid #C0DD97;background:var(--green-light);color:var(--green-dark);cursor:pointer;font-family:'DM Sans',sans-serif;">Add to list</button>
+          <button onclick="ignoreFlag(${i})" style="font-size:11px;padding:3px 10px;border-radius:var(--radius-sm);border:1px solid var(--gray-200);background:#fff;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;">Ignore</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function approveFlag(i) {
+    const f = flaggedEquipment[i];
+    KNOWN_EQUIPMENT.push(f.raw);
+    flaggedEquipment.splice(i,1);
+    localStorage.setItem('candor_flags_v1', JSON.stringify(flaggedEquipment));
+    renderFlagList();
+    renderEquipList();
+    showToast('"'+f.raw+'" added to equipment list', 'green');
+  }
+
+  function ignoreFlag(i) {
+    flaggedEquipment.splice(i,1);
+    localStorage.setItem('candor_flags_v1', JSON.stringify(flaggedEquipment));
+    renderFlagList();
+    showToast('Flagged type ignored');
+  }
+
+  function renderEquipList() {
+    const el = document.getElementById('equipList');
+    if (!el) return;
+    el.innerHTML = KNOWN_EQUIPMENT.map(e =>
+      `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`
+    ).join('');
+  }
+
+
+  // ── LANE SEARCH FUNCTIONS ──
+  // ── CITY COORDINATES — large built-in database ──
+  // Format: 'city st': [lat, lon]
+  const CC = {
+    // Tennessee
+    'memphis tn':[35.1495,-90.0490],'nashville tn':[36.1627,-86.7816],
+    'knoxville tn':[35.9606,-83.9207],'chattanooga tn':[35.0456,-85.3097],
+    'clarksville tn':[36.5298,-87.3595],'murfreesboro tn':[35.8456,-86.3903],
+    'franklin tn':[35.9251,-86.8689],'jackson tn':[35.6145,-88.8139],
+    'johnson city tn':[36.3134,-82.3535],'bartlett tn':[35.2045,-89.8742],
+    'hendersonville tn':[36.3048,-86.6200],'kingsport tn':[36.5484,-82.5618],
+    'collierville tn':[35.0420,-89.6645],'smyrna tn':[35.9829,-86.5186],
+    'cleveland tn':[35.1595,-84.8766],'brentwood tn':[36.0334,-86.7827],
+    // Texas
+    'dallas tx':[32.7767,-96.7970],'houston tx':[29.7604,-95.3698],
+    'san antonio tx':[29.4241,-98.4936],'austin tx':[30.2672,-97.7431],
+    'fort worth tx':[32.7555,-97.3308],'el paso tx':[31.7619,-106.4850],
+    'arlington tx':[32.7357,-97.1081],'corpus christi tx':[27.8006,-97.3964],
+    'plano tx':[33.0198,-96.6989],'lubbock tx':[33.5779,-101.8552],
+    'laredo tx':[27.5306,-99.4803],'irving tx':[32.8140,-96.9489],
+    'garland tx':[32.9126,-96.6389],'amarillo tx':[35.2220,-101.8313],
+    'grand prairie tx':[32.7460,-97.0208],'mckinney tx':[33.1972,-96.6397],
+    'mesquite tx':[32.7668,-96.5992],'killeen tx':[31.1171,-97.7278],
+    'waco tx':[31.5493,-97.1467],'beaumont tx':[30.0860,-94.1018],
+    'midland tx':[31.9973,-102.0779],'odessa tx':[31.8457,-102.3676],
+    'abilene tx':[32.4487,-99.7331],'round rock tx':[30.5083,-97.6789],
+    'richardson tx':[32.9483,-96.7299],'lewisville tx':[33.0462,-96.9942],
+    'tyler tx':[32.3513,-95.3011],'pearland tx':[29.5635,-95.2860],
+    'college station tx':[30.6280,-96.3344],'carrollton tx':[32.9537,-96.8903],
+    // Illinois
+    'chicago il':[41.8781,-87.6298],'aurora il':[41.7606,-88.3201],
+    'rockford il':[42.2711,-89.0940],'joliet il':[41.5250,-88.0817],
+    'naperville il':[41.7508,-88.1535],'springfield il':[39.7817,-89.6501],
+    'peoria il':[40.6936,-89.5890],'elgin il':[42.0354,-88.2826],
+    'waukegan il':[42.3636,-87.8448],'champaign il':[40.1164,-88.2434],
+    'bloomington il':[40.4842,-88.9937],'decatur il':[39.8403,-88.9548],
+    'evanston il':[42.0450,-87.6877],'schaumburg il':[42.0334,-88.0834],
+    'bolingbrook il':[41.6986,-88.0684],'palatine il':[42.1103,-88.0340],
+    'skokie il':[42.0324,-87.7416],'des plaines il':[42.0336,-87.8834],
+    'orland park il':[41.6031,-87.8540],'tinley park il':[41.5731,-87.7873],
+    // Michigan
+    'detroit mi':[42.3314,-83.0458],'grand rapids mi':[42.9634,-85.6681],
+    'warren mi':[42.4775,-83.0277],'sterling heights mi':[42.5803,-83.0302],
+    'lansing mi':[42.7325,-84.5555],'ann arbor mi':[42.2808,-83.7430],
+    'flint mi':[43.0125,-83.6875],'dearborn mi':[42.3223,-83.1763],
+    'livonia mi':[42.3684,-83.3527],'westland mi':[42.3242,-83.4002],
+    'troy mi':[42.6064,-83.1498],'farmington hills mi':[42.4989,-83.3677],
+    'kalamazoo mi':[42.2917,-85.5872],'wyoming mi':[42.9134,-85.7053],
+    'southfield mi':[42.4734,-83.2219],'rochester hills mi':[42.6581,-83.1499],
+    'taylor mi':[42.2406,-83.2697],'pontiac mi':[42.6389,-83.2911],
+    'east lansing mi':[42.7368,-84.4839],'battle creek mi':[42.3212,-85.1797],
+    'saginaw mi':[43.4195,-83.9508],'midland mi':[43.6156,-84.2472],
+    'muskegon mi':[43.2342,-86.2484],'holland mi':[42.7876,-86.1089],
+    'wixom mi':[42.5248,-83.5360],'macomb mi':[42.6659,-82.9218],
+    'west bloomfield mi':[42.5537,-83.3777],'monroe mi':[41.9161,-83.3974],
+    // Georgia
+    'atlanta ga':[33.7490,-84.3880],'columbus ga':[32.4610,-84.9877],
+    'savannah ga':[32.0809,-81.0912],'athens ga':[33.9519,-83.3576],
+    'macon ga':[32.8407,-83.6324],'augusta ga':[33.4735,-82.0105],
+    'sandy springs ga':[33.9304,-84.3733],'roswell ga':[34.0232,-84.3616],
+    'albany ga':[31.5785,-84.1557],'marietta ga':[33.9526,-84.5499],
+    'smyrna ga':[33.8840,-84.5144],'warner robins ga':[32.6130,-83.5996],
+    'johns creek ga':[34.0289,-84.1986],'alpharetta ga':[34.0754,-84.2941],
+    'lawrenceville ga':[33.9565,-83.9877],'newnan ga':[33.3807,-84.7997],
+    'cartersville ga':[34.1651,-84.7999],'rome ga':[34.2570,-85.1647],
+    // Ohio
+    'columbus oh':[39.9612,-82.9988],'cleveland oh':[41.4993,-81.6944],
+    'cincinnati oh':[39.1031,-84.5120],'toledo oh':[41.6528,-83.5379],
+    'akron oh':[41.0814,-81.5190],'dayton oh':[39.7589,-84.1916],
+    'parma oh':[41.3845,-81.7229],'canton oh':[40.7989,-81.3784],
+    'youngstown oh':[41.0998,-80.6495],'lorain oh':[41.4523,-82.1824],
+    'hamilton oh':[39.3995,-84.5613],'springfield oh':[39.9242,-83.8088],
+    'kettering oh':[39.6895,-84.1688],'elyria oh':[41.3681,-82.1074],
+    'lakewood oh':[41.4820,-81.7982],'cuyahoga falls oh':[41.1334,-81.4846],
+    'moraine oh':[39.6859,-84.2327],
+    // Indiana
+    'indianapolis in':[39.7684,-86.1581],'fort wayne in':[41.0793,-85.1394],
+    'evansville in':[37.9748,-87.5558],'south bend in':[41.6764,-86.2520],
+    'carmel in':[39.9784,-86.1180],'fishers in':[39.9567,-85.9669],
+    'bloomington in':[39.1653,-86.5264],'hammond in':[41.5834,-87.5001],
+    'gary in':[41.5934,-87.3465],'lafayette in':[40.4167,-86.8753],
+    'muncie in':[40.1934,-85.3864],'terre haute in':[39.4667,-87.4139],
+    'greensburg in':[39.3370,-85.4847],'camby in':[39.6428,-86.3244],
+    // Kentucky
+    'louisville ky':[38.2527,-85.7585],'lexington ky':[38.0406,-84.5037],
+    'bowling green ky':[36.9685,-86.4808],'owensboro ky':[37.7719,-87.1111],
+    'covington ky':[39.0837,-84.5086],'hopkinsville ky':[36.8656,-87.4886],
+    'richmond ky':[37.7479,-84.2947],'florence ky':[38.9989,-84.6246],
+    'georgetown ky':[38.2098,-84.5588],'harrodsburg ky':[37.7626,-84.8430],
+    'crutchfield ky':[36.8309,-88.9856],'calvert city ky':[37.0337,-88.3503],
+    // North Carolina
+    'charlotte nc':[35.2271,-80.8431],'raleigh nc':[35.7796,-78.6382],
+    'greensboro nc':[36.0726,-79.7920],'durham nc':[35.9940,-78.8986],
+    'winston-salem nc':[36.0999,-80.2442],'fayetteville nc':[35.0527,-78.8784],
+    'cary nc':[35.7915,-78.7811],'wilmington nc':[34.2257,-77.9447],
+    'high point nc':[35.9557,-80.0053],'concord nc':[35.4088,-80.5796],
+    'fuquay varina nc':[35.5843,-78.7997],'asheville nc':[35.5951,-82.5515],
+    // Wisconsin
+    'milwaukee wi':[43.0389,-87.9065],'madison wi':[43.0731,-89.4012],
+    'green bay wi':[44.5133,-88.0133],'kenosha wi':[42.5847,-87.8212],
+    'racine wi':[42.7261,-87.7829],'appleton wi':[44.2619,-88.4154],
+    'waukesha wi':[43.0117,-88.2315],'oshkosh wi':[44.0247,-88.5426],
+    'eau claire wi':[44.8113,-91.4985],'janesville wi':[42.6828,-89.0187],
+    'franksville wi':[42.7667,-87.9084],
+    // Iowa
+    'des moines ia':[41.5868,-93.6250],'cedar rapids ia':[41.9779,-91.6656],
+    'davenport ia':[41.5236,-90.5776],'sioux city ia':[42.4999,-96.4003],
+    'iowa city ia':[41.6611,-91.5302],'waterloo ia':[42.4928,-92.3426],
+    'dubuque ia':[42.5006,-90.6646],'council bluffs ia':[41.2619,-95.8608],
+    // Arkansas
+    'little rock ar':[34.7465,-92.2896],'fort smith ar':[35.3859,-94.3985],
+    'fayetteville ar':[36.0822,-94.1719],'springdale ar':[36.1867,-94.1288],
+    'jonesboro ar':[35.8423,-90.7043],'west memphis ar':[35.1465,-90.1845],
+    // Alabama
+    'birmingham al':[33.5186,-86.8104],'montgomery al':[32.3792,-86.3077],
+    'huntsville al':[34.7304,-86.5861],'mobile al':[30.6954,-88.0399],
+    'tuscaloosa al':[33.2098,-87.5692],'hoover al':[33.4045,-86.8114],
+    'madison al':[34.6993,-86.7483],
+    // Mississippi
+    'jackson ms':[32.2988,-90.1848],'gulfport ms':[30.3674,-89.0928],
+    'southaven ms':[34.9890,-89.9923],'hattiesburg ms':[31.3271,-89.2903],
+    // Missouri
+    'kansas city mo':[39.0997,-94.5786],'st louis mo':[38.6270,-90.1994],
+    'springfield mo':[37.2090,-93.2923],'columbia mo':[38.9517,-92.3341],
+    'independence mo':[39.0911,-94.4155],'lees summit mo':[38.9108,-94.3822],
+    "o'fallon mo":[38.8106,-90.6999],'st joseph mo':[39.7675,-94.8467],
+    // Minnesota
+    'minneapolis mn':[44.9778,-93.2650],'st paul mn':[44.9537,-93.0900],
+    'rochester mn':[44.0121,-92.4802],'duluth mn':[46.7867,-92.1005],
+    'bloomington mn':[44.8408,-93.3477],'brooklyn park mn':[45.0941,-93.3752],
+    // Nebraska
+    'omaha ne':[41.2565,-95.9345],'lincoln ne':[40.8136,-96.7026],
+    'bellevue ne':[41.1544,-95.9146],'grand island ne':[40.9264,-98.3420],
+    // Kansas
+    'wichita ks':[37.6872,-97.3301],'overland park ks':[38.9822,-94.6708],
+    'kansas city ks':[39.1155,-94.6268],'topeka ks':[39.0558,-95.6890],
+    'olathe ks':[38.8814,-94.8191],
+    // Oklahoma
+    'oklahoma city ok':[35.4676,-97.5164],'tulsa ok':[36.1540,-95.9928],
+    'norman ok':[35.2226,-97.4395],'broken arrow ok':[36.0526,-95.7908],
+    'lawton ok':[34.6036,-98.3959],
+    // Louisiana
+    'new orleans la':[29.9511,-90.0715],'baton rouge la':[30.4515,-91.1871],
+    'shreveport la':[32.5252,-93.7502],'metairie la':[29.9827,-90.1795],
+    'lafayette la':[30.2241,-92.0198],
+    // Florida
+    'jacksonville fl':[30.3322,-81.6557],'miami fl':[25.7617,-80.1918],
+    'tampa fl':[27.9506,-82.4572],'orlando fl':[28.5383,-81.3792],
+    'st petersburg fl':[27.7676,-82.6403],'hialeah fl':[25.8576,-80.2781],
+    'tallahassee fl':[30.4518,-84.2727],'fort lauderdale fl':[26.1224,-80.1373],
+    'port st lucie fl':[27.2939,-80.3503],'cape coral fl':[26.5629,-81.9495],
+    'pembroke pines fl':[26.0078,-86.1397],'hollywood fl':[26.0112,-80.1495],
+    'miramar fl':[25.9860,-80.3032],'gainesville fl':[29.6516,-82.3248],
+    'coral springs fl':[26.2711,-80.2706],'clearwater fl':[27.9659,-82.8001],
+    // South Carolina
+    'columbia sc':[34.0007,-81.0348],'charleston sc':[32.7765,-79.9311],
+    'north charleston sc':[32.8546,-79.9748],'rock hill sc':[34.9249,-81.0251],
+    'greenville sc':[34.8526,-82.3940],'summerville sc':[33.0185,-80.1756],
+    // Virginia
+    'virginia beach va':[36.8529,-75.9780],'chesapeake va':[36.7682,-76.2875],
+    'norfolk va':[36.8508,-76.2859],'richmond va':[37.5407,-77.4360],
+    'newport news va':[37.0871,-76.4730],'roanoke va':[37.2710,-79.9414],
+    // Maryland
+    'baltimore md':[39.2904,-76.6122],'frederick md':[39.4143,-77.4105],
+    'rockville md':[39.0840,-77.1528],'gaithersburg md':[39.1434,-77.2014],
+    // Pennsylvania
+    'philadelphia pa':[39.9526,-75.1652],'pittsburgh pa':[40.4406,-79.9959],
+    'allentown pa':[40.6084,-75.4902],'erie pa':[42.1292,-80.0851],
+    'reading pa':[40.3356,-75.9269],'scranton pa':[41.4090,-75.6624],
+    // New York
+    'new york ny':[40.7128,-74.0060],'buffalo ny':[42.8864,-78.8784],
+    'rochester ny':[43.1566,-77.6088],'yonkers ny':[40.9312,-73.8988],
+    'syracuse ny':[43.0481,-76.1474],'albany ny':[42.6526,-73.7562],
+    'staten island ny':[40.5795,-74.1502],
+    // New Jersey
+    'newark nj':[40.7357,-74.1724],'jersey city nj':[40.7178,-74.0431],
+    'paterson nj':[40.9168,-74.1719],'elizabeth nj':[40.6640,-74.2107],
+    // Colorado
+    'denver co':[39.7392,-104.9903],'colorado springs co':[38.8339,-104.8214],
+    'aurora co':[39.7294,-104.8319],'fort collins co':[40.5853,-105.0844],
+    'lakewood co':[39.7047,-105.0814],'thornton co':[39.8680,-104.9719],
+    'pueblo co':[38.2544,-104.6091],
+    // Arizona
+    'phoenix az':[33.4484,-112.0740],'tucson az':[32.2226,-110.9747],
+    'mesa az':[33.4152,-111.8315],'chandler az':[33.3062,-111.8413],
+    'scottsdale az':[33.4942,-111.9261],'gilbert az':[33.3528,-111.7890],
+    'tempe az':[33.4255,-111.9400],'peoria az':[33.5806,-112.2374],
+    'surprise az':[33.6292,-112.3679],'yuma az':[32.6927,-114.6277],
+    // Nevada
+    'las vegas nv':[36.1699,-115.1398],'henderson nv':[36.0395,-114.9817],
+    'reno nv':[39.5296,-119.8138],'north las vegas nv':[36.1989,-115.1175],
+    // California
+    'los angeles ca':[34.0522,-118.2437],'san diego ca':[32.7157,-117.1611],
+    'san jose ca':[37.3382,-121.8863],'san francisco ca':[37.7749,-122.4194],
+    'fresno ca':[36.7378,-119.7871],'sacramento ca':[38.5816,-121.4944],
+    'long beach ca':[33.7701,-118.1937],'oakland ca':[37.8044,-122.2712],
+    'bakersfield ca':[35.3733,-119.0187],'anaheim ca':[33.8366,-117.9143],
+    'riverside ca':[33.9806,-117.3755],'stockton ca':[37.9577,-121.2908],
+    'irvine ca':[33.6846,-117.8265],'chula vista ca':[32.6401,-117.0842],
+    'modesto ca':[37.6391,-120.9969],'san bernardino ca':[34.1083,-117.2898],
+    // Washington
+    'seattle wa':[47.6062,-122.3321],'spokane wa':[47.6588,-117.4260],
+    'tacoma wa':[47.2529,-122.4443],'vancouver wa':[45.6387,-122.6615],
+    'bellevue wa':[47.6101,-122.2015],'kent wa':[47.3809,-122.2348],
+    // Oregon
+    'portland or':[45.5051,-122.6750],'eugene or':[44.0521,-123.0868],
+    'salem or':[44.9429,-123.0351],'gresham or':[45.5001,-122.4302],
+    // Utah
+    'salt lake city ut':[40.7608,-111.8910],'west valley city ut':[40.6916,-112.0010],
+    'provo ut':[40.2338,-111.6585],'west jordan ut':[40.6097,-111.9391],
+    // New Mexico
+    'albuquerque nm':[35.0844,-106.6504],'las cruces nm':[32.3199,-106.7637],
+    'rio rancho nm':[35.2328,-106.6630],
+    // Idaho
+    'boise id':[43.6150,-116.2023],'nampa id':[43.5407,-116.5635],
+    'meridian id':[43.6121,-116.3915],'idaho falls id':[43.4917,-112.0330],
+    // Montana
+    'billings mt':[45.7833,-108.5007],'missoula mt':[46.8721,-113.9940],
+    'great falls mt':[47.5002,-111.3008],
+    // North Dakota
+    'fargo nd':[46.8772,-96.7898],'bismarck nd':[46.8083,-100.7837],
+    // South Dakota
+    'sioux falls sd':[43.5446,-96.7311],'rapid city sd':[44.0805,-103.2310],
+    // Wyoming
+    'cheyenne wy':[41.1400,-104.8202],'casper wy':[42.8501,-106.3252],
+    // Alaska & Hawaii (just in case)
+    'anchorage ak':[61.2181,-149.9003],'honolulu hi':[21.3069,-157.8583]
+  };
+
+  function getCityCoords(city, state) {
+    if (!city || !state) return null;
+    const key = (city+' '+state).toLowerCase().trim();
+    if (CC[key]) return CC[key];
+    // Partial match — try just city name with state
+    const cityLower = city.toLowerCase().trim();
+    for (const [k,v] of Object.entries(CC)) {
+      if (k.endsWith(' '+state.toLowerCase()) && k.startsWith(cityLower)) return v;
+    }
+    return null;
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 3959;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)*Math.sin(dLat/2)+
+              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+              Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  function lsCheckMode() {
+    const origin = (document.getElementById('ls_origin')||{value:''}).value.trim();
+    const dest   = (document.getElementById('ls_dest')||{value:''}).value.trim();
+    const badge  = document.getElementById('ls_mode_badge');
+    if (!badge) return;
+    if (!origin) { badge.style.display='none'; return; }
+    badge.style.display='';
+    if (dest) {
+      badge.textContent='Full lane — '+origin+' → '+dest;
+      badge.style.background='var(--green-light)'; badge.style.color='var(--green-dark)';
+    } else {
+      badge.textContent='Area search — '+origin;
+      badge.style.background='var(--blue-light)'; badge.style.color='var(--blue-dark)';
+    }
+  }
+
+  function runLaneSearch() {
+    const originEl = document.getElementById('ls_origin');
+    const destEl   = document.getElementById('ls_dest');
+    const radEl    = document.getElementById('ls_radius');
+    const eqEl     = document.getElementById('ls_equip');
+    if (!originEl) return;
+
+    const originRaw = originEl.value.trim();
+    const destRaw   = destEl ? destEl.value.trim() : '';
+    const radius    = radEl  ? parseInt(radEl.value) : 150;
+    const equipFilt = eqEl   ? eqEl.value.toLowerCase() : '';
+
+    if (!originRaw) { showToast('Enter an origin city to search'); return; }
+
+    const parts      = originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+    const originCity = parts ? parts[1].trim() : originRaw;
+    const originSt   = parts ? parts[2].trim().toUpperCase() : '';
+    const originCoords = getCityCoords(originCity, originSt);
+
+    const trucks = loadTrucks();
+    const results = [];
+
+    for (const t of trucks) {
+      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
+      let distance = null;
+      let include = false;
+
+      if (originCoords) {
+        const tc = getCityCoords(t.city, t.state);
+        if (tc) {
+          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
+          include = (radius === 9999 || distance <= radius);
+        } else {
+          // Truck city not in db — include it but show no distance
+          include = true;
+        }
+      } else {
+        // Origin not found — match by state or show all
+        include = !originSt || t.state === originSt;
+        if (!originSt) showToast('"'+originRaw+'" not found in database — showing all trucks');
+      }
+
+      if (include) results.push({...t, distance});
+    }
+
+    results.sort((a,b) => (a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
+    renderLaneResults(results, originRaw, destRaw, radius);
+  }
+
+  function renderLaneResults(trucks, origin, dest, radius) {
+    const emptyEl = document.getElementById('ls_empty');
+    const gridEl  = document.getElementById('ls_grid');
+    if (emptyEl) emptyEl.style.display='none';
+    if (gridEl)  gridEl.style.display='grid';
+
+    lsCheckMode();
+    const summaryEl = document.getElementById('ls_summary_text');
+    if (summaryEl) summaryEl.textContent = trucks.length+' truck'+(trucks.length!==1?'s':'')+' found'+(radius!==9999?' within '+radius+' miles':'')+' of '+origin;
+
+    const statTrucks = document.getElementById('ls_stat_trucks');
+    const statSub    = document.getElementById('ls_stat_trucks_sub');
+    const countEl    = document.getElementById('ls_truck_count');
+    const histEl     = document.getElementById('ls_hist_count');
+    if (statTrucks) statTrucks.textContent = trucks.length;
+    if (statSub)    statSub.textContent    = (radius!==9999?'within '+radius+' mi':'')+' of '+origin;
+    if (countEl)    countEl.textContent    = trucks.length+' trucks';
+    if (histEl)     histEl.textContent     = '0 carriers';
+
+    const rowsEl = document.getElementById('ls_truck_rows');
+    if (rowsEl) {
+      if (!trucks.length) {
+        rowsEl.innerHTML='<div style="padding:24px;text-align:center;font-size:13px;color:var(--gray-400);">No trucks found in this area — try a larger radius or different equipment filter.</div>';
+      } else {
+        const hrs  = t => Math.floor((Date.now()-t.posted)/3600000);
+        const aClr = t => hrs(t)<12?'var(--green-dark)':hrs(t)<48?'var(--amber-dark)':'var(--red-dark)';
+        const dClr = t => hrs(t)<12?'var(--green)':hrs(t)<48?'var(--amber)':'var(--red)';
+        const aLbl = t => { const m=Math.floor((Date.now()-t.posted)/60000); return m<60?m+'m ago':hrs(t)<24?hrs(t)+'h ago':Math.floor(hrs(t)/24)+'d ago'; };
+        rowsEl.innerHTML = trucks.map(t=>`
+          <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);${hrs(t)>=48?'opacity:0.5':''}">
+            <div style="width:14px;padding:12px 6px 12px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:${dClr(t)};display:inline-block;"></span></div>
+            <div style="flex:1;padding:11px 12px;overflow:hidden;">
+              <div onclick="openCarrierProfile('${t.carrier}','${t.mc}','${t.phone}')" style="font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;" title="View carrier profile">${t.carrier}</div>
+              <div style="font-size:11px;color:var(--blue);font-family:'DM Mono',monospace;">${t.phone}</div>
+            </div>
+            <div style="width:130px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
+            <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.city}, ${t.state}</div>
+            <div style="width:90px;padding:11px 12px;font-size:12px;font-family:'DM Mono',monospace;color:var(--gray-600);flex-shrink:0;">${t.distance!=null?t.distance+' mi':'—'}</div>
+            <div style="width:90px;padding:11px 12px;flex-shrink:0;"><span style="font-size:12px;font-family:'DM Mono',monospace;color:${aClr(t)};">${aLbl(t)}</span></div>
+            <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:${t.status==='Available'?'var(--green-light)':'var(--amber-light)'};color:${t.status==='Available'?'var(--green-dark)':'var(--amber-dark)'};">${t.status}</span></div>
+          </div>`).join('');
+      }
+    }
+
+    const tagsEl = document.getElementById('ls_equip_tags');
+    if (tagsEl) {
+      const types = [...new Set(trucks.map(t=>t.equip))];
+      tagsEl.innerHTML = types.length
+        ? types.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('')
+        : '<div style="font-size:12px;color:var(--gray-400);">No trucks found nearby</div>';
+    }
+
+    const laneText = dest ? origin+' → '+dest : 'around '+origin;
+    const histRowsEl = document.getElementById('ls_history_rows');
+    if (histRowsEl) {
+      histRowsEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
+        <div style="font-size:20px;flex-shrink:0;">📂</div>
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded for ${laneText}</div>
+          <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export to see which carriers have run this lane, load counts, and avg pay rates.</div>
+          <div style="margin-top:8px;"><span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>
+        </div></div>`;
+    }
+    const rateEl = document.getElementById('ls_rate_content');
+    if (rateEl) {
+      rateEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
+        <div style="font-size:20px;flex-shrink:0;">💰</div>
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No rate data for ${laneText}</div>
+          <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Once shipment history is loaded you'll see avg carrier pay, customer charge, and margin on this lane.</div>
+        </div></div>`;
+    }
+  }
+
+
+
+  // ── CARRIER PROFILES ──
+  const CARRIERS_KEY = 'candor_carriers_v1';
+  let currentCarrierId = null;
+
+  function loadCarriers() {
+    try { const c = localStorage.getItem(CARRIERS_KEY); return c ? JSON.parse(c) : {}; }
+    catch(e) { return {}; }
+  }
+  function saveCarriers(c) { localStorage.setItem(CARRIERS_KEY, JSON.stringify(c)); }
+
+  function carrierIdFromName(name) {
+    return name.toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,40);
+  }
+
+  function openCarrierProfile(carrierName, mc, phone) {
+    currentCarrierId = carrierIdFromName(carrierName);
+    const carriers = loadCarriers();
+
+    // Create profile if it doesn't exist
+    if (!carriers[currentCarrierId]) {
+      carriers[currentCarrierId] = {
+        name: carrierName, mc: mc||'—', phone: phone||'—',
+        notes: '', dnu: false, dnuReason: '', dnuBy: '', dnuDate: '',
+        createdAt: new Date().toLocaleDateString()
+      };
+      saveCarriers(carriers);
+    } else {
+      // Update contact info if we have better data
+      if (mc && mc !== '—') carriers[currentCarrierId].mc = mc;
+      if (phone && phone !== '—') carriers[currentCarrierId].phone = phone;
+      saveCarriers(carriers);
+    }
+
+    renderCarrierProfile(currentCarrierId);
+    showPage('carrier');
+  }
+
+  function renderCarrierProfile(carrierId) {
+    const carriers = loadCarriers();
+    const c = carriers[carrierId];
+    if (!c) return;
+
+    // Breadcrumb
+    const bc = document.getElementById('cp_breadcrumb');
+    if (bc) bc.textContent = c.name;
+
+    // Avatar initials
+    const avatar = document.getElementById('cp_avatar');
+    if (avatar) {
+      const initials = c.name.split(/\s+/).map(w=>w[0]).join('').substring(0,2).toUpperCase();
+      avatar.textContent = initials;
+      avatar.style.background = c.dnu ? 'var(--red-light)' : 'var(--green-light)';
+      avatar.style.color = c.dnu ? 'var(--red-dark)' : 'var(--green-dark)';
+    }
+
+    // Name + DNU badge
+    const nameEl = document.getElementById('cp_name');
+    if (nameEl) {
+      nameEl.innerHTML = c.name + (c.dnu ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#F09595;color:#501313;font-weight:500;margin-left:6px;">DNU</span>' : '');
+    }
+
+    const mcEl = document.getElementById('cp_mc');
+    if (mcEl) mcEl.textContent = c.mc;
+
+    // Contact rows
+    const contactEl = document.getElementById('cp_contact_rows');
+    if (contactEl) {
+      const rows = [
+        ['Phone', `<a href="tel:${c.phone}" style="color:var(--blue);">${c.phone}</a>`],
+        ['Home base', c.homeBase||'—'],
+        ['First seen', c.createdAt||'—'],
+        ['Last post', getCarrierLastPost(c.name)||'—'],
+      ];
+      contactEl.innerHTML = rows.map(([label,val]) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid var(--gray-100);font-size:12px;">
+          <span style="color:var(--gray-400);">${label}</span>
+          <span style="color:var(--black);font-weight:500;text-align:right;">${val}</span>
+        </div>`).join('');
+    }
+
+    // Notes
+    const notesEl = document.getElementById('cp_notes_input');
+    if (notesEl) notesEl.value = c.notes||'';
+
+    // DNU state
+    renderDNUState(c);
+
+    // Stats from shipment history
+    renderCarrierStats(c.name);
+
+    // Recent truck posts from board
+    renderCarrierPosts(c.name);
+
+    // DNU banner
+    const banner = document.getElementById('cp_dnu_banner');
+    const bannerSmall = document.getElementById('cp_dnu_banner_small');
+    if (banner) {
+      if (c.dnu) {
+        banner.style.display = 'flex';
+        const reasonEl = document.getElementById('cp_dnu_reason_text');
+        const metaEl   = document.getElementById('cp_dnu_meta');
+        if (reasonEl) reasonEl.textContent = c.dnuReason||'No reason provided';
+        if (metaEl)   metaEl.textContent   = c.dnuBy ? 'Flagged by '+c.dnuBy+' · '+c.dnuDate : '';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+    if (bannerSmall) bannerSmall.style.display = c.dnu ? '' : 'none';
+  }
+
+  function getCarrierLastPost(name) {
+    const trucks = loadTrucks();
+    const match = trucks.filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+    if (!match.length) return null;
+    match.sort((a,b)=>b.posted-a.posted);
+    const hrs = Math.floor((Date.now()-match[0].posted)/3600000);
+    return hrs < 1 ? 'Just now' : hrs < 24 ? hrs+'h ago' : Math.floor(hrs/24)+'d ago';
+  }
+
+  function renderCarrierStats(name) {
+    // Load from shipment history if available
+    const history = JSON.parse(localStorage.getItem('candor_shipment_history')||'[]');
+    const carLoads = history.filter(s => s.carrier && s.carrier.toLowerCase().includes(name.toLowerCase()));
+
+    const statLoads = document.getElementById('cp_stat_loads');
+    const statRpm   = document.getElementById('cp_stat_rpm');
+    const statPaid  = document.getElementById('cp_stat_paid');
+    const statLast  = document.getElementById('cp_stat_last');
+
+    if (!carLoads.length) {
+      if (statLoads) statLoads.textContent = '—';
+      if (statRpm)   statRpm.textContent   = '—';
+      if (statPaid)  statPaid.textContent  = '—';
+      if (statLast)  statLast.textContent  = '—';
+
+      // Equip tags from board trucks
+      const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+      const equipEl = document.getElementById('cp_equip_tags');
+      if (equipEl) {
+        const types = [...new Set(trucks.map(t=>t.equip))];
+        equipEl.innerHTML = types.length
+          ? types.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('')
+          : '<div style="font-size:12px;color:var(--gray-400);">Upload history to see equipment data</div>';
+      }
+      return;
+    }
+
+    // Calculate stats
+    const totalPaid = carLoads.reduce((sum,s)=>sum+(s.carrierCost||0),0);
+    const totalMiles = carLoads.reduce((sum,s)=>sum+(s.miles||0),0);
+    const avgRpm = totalMiles > 0 ? (totalPaid/totalMiles).toFixed(2) : '—';
+    const lastLoad = carLoads.sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+
+    if (statLoads) statLoads.textContent = carLoads.length;
+    if (statRpm)   statRpm.textContent   = totalMiles>0?'$'+avgRpm+'/mi':'—';
+    if (statPaid)  statPaid.textContent  = '$'+Math.round(totalPaid/1000)+'k';
+    if (statLast)  statLast.textContent  = lastLoad?.date||'—';
+
+    // Equipment from history
+    const equipTypes = [...new Set(carLoads.map(s=>s.equip).filter(Boolean))];
+    const equipEl = document.getElementById('cp_equip_tags');
+    if (equipEl && equipTypes.length) {
+      equipEl.innerHTML = equipTypes.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('');
+    }
+
+    // Lane history
+    renderCarrierLanes(name, carLoads);
+  }
+
+  function renderCarrierLanes(name, carLoads) {
+    const lanesEl   = document.getElementById('cp_lanes_content');
+    const countEl   = document.getElementById('cp_lanes_count');
+    if (!lanesEl) return;
+
+    // Group by origin→dest
+    const laneMap = {};
+    for (const s of carLoads) {
+      if (!s.origin||!s.dest) continue;
+      const key = s.origin+'→'+s.dest;
+      if (!laneMap[key]) laneMap[key]={origin:s.origin,dest:s.dest,count:0,totalPay:0,lastDate:s.date};
+      laneMap[key].count++;
+      laneMap[key].totalPay += s.carrierCost||0;
+      if (new Date(s.date)>new Date(laneMap[key].lastDate)) laneMap[key].lastDate=s.date;
+    }
+    const lanes = Object.values(laneMap).sort((a,b)=>b.count-a.count).slice(0,10);
+
+    if (!lanes.length) {
+      lanesEl.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No lane data for this carrier</div>';
+      return;
+    }
+    if (countEl) countEl.textContent = lanes.length+' lanes';
+
+    lanesEl.innerHTML = `
+      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+        <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Origin</div>
+        <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Destination</div>
+        <div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
+        <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>
+        <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>
+      </div>
+      ${lanes.map(l=>`
+        <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 0;">
+          <div style="flex:1;padding:0 16px;font-size:13px;font-weight:500;color:var(--black);">${l.origin}</div>
+          <div style="flex:1;padding:0 12px;font-size:13px;font-weight:500;color:var(--black);">${l.dest}</div>
+          <div style="width:80px;padding:0 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${l.count} loads</div>
+          <div style="width:100px;padding:0 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${l.count>0?'$'+(l.totalPay/l.count).toFixed(0):'—'}</div>
+          <div style="width:110px;padding:0 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">${l.lastDate||'—'}</div>
+        </div>`).join('')}`;
+  }
+
+  function renderCarrierPosts(name) {
+    const el = document.getElementById('cp_posts_content');
+    if (!el) return;
+    const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+    if (!trucks.length) {
+      el.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts from this carrier on the board</div>';
+      return;
+    }
+    trucks.sort((a,b)=>b.posted-a.posted);
+    const hrs  = t => Math.floor((Date.now()-t.posted)/3600000);
+    const aLbl = t => { const m=Math.floor((Date.now()-t.posted)/60000); return m<60?m+'m ago':hrs(t)<24?hrs(t)+'h ago':Math.floor(hrs(t)/24)+'d ago'; };
+    const dClr = t => hrs(t)<12?'var(--green)':hrs(t)<48?'var(--amber)':'var(--red)';
+    el.innerHTML = `
+      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+        <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
+        <div style="width:120px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Posted</div>
+        <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Location</div>
+        <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+        <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
+      </div>
+      ${trucks.map(t=>`
+        <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
+          <div style="width:14px;padding:11px 6px 11px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:${dClr(t)};display:inline-block;"></span></div>
+          <div style="width:120px;padding:11px 12px;font-size:12px;font-family:'DM Mono',monospace;color:var(--gray-600);flex-shrink:0;">${aLbl(t)}</div>
+          <div style="flex:1;padding:11px 12px;font-size:13px;font-weight:500;color:var(--black);">${t.city}, ${t.state}</div>
+          <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
+          <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:${t.status==='Available'?'var(--green-light)':'var(--amber-light)'};color:${t.status==='Available'?'var(--green-dark)':'var(--amber-dark)'};">${t.status}</span></div>
+        </div>`).join('')}`;
+  }
+
+  function saveCarrierNotes() {
+    const carriers = loadCarriers();
+    if (!carriers[currentCarrierId]) return;
+    const notes = document.getElementById('cp_notes_input').value;
+    carriers[currentCarrierId].notes = notes;
+    saveCarriers(carriers);
+    showToast('Note saved','green');
+  }
+
+  function renderDNUState(c) {
+    const toggle = document.getElementById('cp_dnu_toggle');
+    const knob   = document.getElementById('cp_dnu_knob');
+    const form   = document.getElementById('cp_dnu_form');
+    const info   = document.getElementById('cp_dnu_active_info');
+    if (!toggle) return;
+    if (c.dnu) {
+      toggle.style.background = 'var(--red)';
+      knob.style.left = '18px';
+      if (form) form.style.display = 'none';
+      if (info) { info.style.display=''; info.innerHTML=`<span style="color:var(--red-dark);">${c.dnuReason||'No reason given'}</span><br><span style="font-size:10px;">Flagged by ${c.dnuBy||'—'} · ${c.dnuDate||'—'}</span>`; }
+    } else {
+      toggle.style.background = 'var(--gray-200)';
+      knob.style.left = '2px';
+      if (form) form.style.display = 'none';
+      if (info) info.style.display = 'none';
+    }
+  }
+
+  function toggleDNU() {
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    if (c.dnu) { removeDNU(); return; }
+    // Show form to enter reason
+    const form = document.getElementById('cp_dnu_form');
+    if (form) form.style.display = form.style.display==='none'?'':'none';
+  }
+
+  function saveDNU() {
+    const reason = document.getElementById('cp_dnu_reason').value.trim();
+    if (!reason) { showToast('Please enter a reason for the DNU flag'); return; }
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    c.dnu = true;
+    c.dnuReason = reason;
+    c.dnuBy = currentUser;
+    c.dnuDate = new Date().toLocaleDateString();
+    saveCarriers(carriers);
+    renderCarrierProfile(currentCarrierId);
+    showToast(c.name+' flagged as DNU','green');
+  }
+
+  function removeDNU() {
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    c.dnu = false; c.dnuReason=''; c.dnuBy=''; c.dnuDate='';
+    saveCarriers(carriers);
+    renderCarrierProfile(currentCarrierId);
+    showToast('DNU flag removed');
+  }
+
+
+
+  // ── SHIPMENT HISTORY HELPERS ──
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem('candor_shipment_history')||'[]'); }
+    catch(e) { return []; }
+  }
+
+  function parseMoney(val) {
+    if (!val) return 0;
+    return parseFloat(String(val).replace(/[^0-9.-]/g,''))||0;
+  }
+
+  function filterByDays(history, days) {
+    if (days >= 9999) return history;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    return history.filter(s => {
+      if (!s.date) return true;
+      return new Date(s.date) >= cutoff;
+    });
+  }
+
+  // ── RATE INTELLIGENCE ──
+  function runRateSearch() {
+    const origin = (document.getElementById('ri_origin')||{value:''}).value.trim();
+    const dest   = (document.getElementById('ri_dest')||{value:''}).value.trim();
+    if (!origin) { showToast('Enter an origin to search'); return; }
+
+    const history = getHistory();
+    if (!history.length) {
+      showToast('No shipment history loaded — upload your TMS export first');
+      showPage('admin');
+      return;
+    }
+
+    // Filter matching shipments
+    const matches = history.filter(s => {
+      const o = (s.origin||'').toLowerCase();
+      const d = (s.dest||s.destination||'').toLowerCase();
+      const originMatch = o.includes(origin.toLowerCase());
+      const destMatch   = !dest || d.includes(dest.toLowerCase());
+      return originMatch && destMatch;
+    });
+
+    const placeholder = document.getElementById('ri_placeholder');
+    const results     = document.getElementById('ri_results');
+    if (!matches.length) {
+      if (placeholder) placeholder.innerHTML = '<div style="text-align:center;padding:40px;"><div style="font-size:24px;margin-bottom:10px;">🔍</div><div style="font-size:14px;color:var(--gray-400);">No shipments found for this lane in your history</div></div>';
+      if (placeholder) placeholder.style.display='';
+      if (results)     results.style.display='none';
+      return;
+    }
+
+    if (placeholder) placeholder.style.display='none';
+    if (results)     { results.style.display='flex'; }
+
+    // Calculate stats
+    const totalCarrierPay = matches.reduce((s,r)=>s+parseMoney(r.carrierCost||r['Carrier Costs']),0);
+    const totalCustCharge = matches.reduce((s,r)=>s+parseMoney(r.custCost||r['Customer Costs']),0);
+    const avgCarrier = totalCarrierPay/matches.length;
+    const avgCust    = totalCustCharge/matches.length;
+    const avgNet     = avgCust - avgCarrier;
+    const avgMargin  = avgCust>0 ? ((avgNet/avgCust)*100) : 0;
+
+    const carPays  = matches.map(s=>parseMoney(s.carrierCost||s['Carrier Costs'])).filter(v=>v>0).sort((a,b)=>a-b);
+    const minPay   = carPays[0]||0;
+    const maxPay   = carPays[carPays.length-1]||0;
+
+    // Rate cards
+    const cardsEl = document.getElementById('ri_rate_cards');
+    if (cardsEl) {
+      cardsEl.innerHTML = [
+        ['Avg carrier pay', '$'+avgCarrier.toFixed(0), 'Range: $'+minPay.toFixed(0)+' – $'+maxPay.toFixed(0), 'var(--black)'],
+        ['Avg customer charge', '$'+avgCust.toFixed(0), matches.length+' shipments', 'var(--black)'],
+        ['Avg net revenue', '$'+avgNet.toFixed(0), 'per shipment', avgNet>0?'var(--green-dark)':'var(--red-dark)'],
+        ['Avg margin', avgMargin.toFixed(1)+'%', avgMargin>=20?'Healthy':'Below target', avgMargin>=20?'var(--green-dark)':'var(--amber-dark)'],
+      ].map(([label,val,sub,color])=>`
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);">
+          <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">${label}</div>
+          <div style="font-size:22px;font-weight:600;color:${color};">${val}</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">${sub}</div>
+        </div>`).join('');
+    }
+
+    // Margin bar
+    const pct = Math.min(100, Math.max(0, avgMargin));
+    const barEl = document.getElementById('ri_margin_bar');
+    const lbl   = document.getElementById('ri_margin_label');
+    if (barEl) { barEl.style.width=pct+'%'; barEl.style.background=pct>=20?'var(--green)':pct>=10?'var(--amber)':'var(--red)'; }
+    if (lbl)   lbl.textContent = avgMargin.toFixed(1)+'% — '+(pct>=20?'Good':pct>=10?'Watch this':'Below target');
+
+    // Lane count
+    const cntEl = document.getElementById('ri_lane_count');
+    if (cntEl) cntEl.textContent = matches.length+' shipments';
+
+    // Shipment rows (most recent first)
+    const rowsEl = document.getElementById('ri_lane_rows');
+    if (rowsEl) {
+      const sorted = [...matches].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,50);
+      rowsEl.innerHTML = sorted.map(s=>{
+        const cp  = parseMoney(s.carrierCost||s['Carrier Costs']);
+        const cc  = parseMoney(s.custCost||s['Customer Costs']);
+        const net = cc - cp;
+        const mg  = cc>0?((net/cc)*100):0;
+        return `<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
+          <div style="flex:1;padding:10px 16px;font-size:12px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.carrier||s['Carrier']||'—'}</div>
+          <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${s.date||'—'}</div>
+          <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${cp.toFixed(0)}</div>
+          <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${cc.toFixed(0)}</div>
+          <div style="width:90px;padding:10px 12px;font-size:12px;font-weight:500;flex-shrink:0;color:${mg>=20?'var(--green-dark)':mg>=10?'var(--amber-dark)':'var(--red-dark)'};">${mg.toFixed(1)}%</div>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── REPORTS ──
+  let reportDays = 30;
+
+  function setReportPeriod(el, days) {
+    reportDays = days;
+    document.querySelectorAll('.rp_period').forEach(e => {
+      e.style.background = 'var(--gray-100)'; e.style.color='var(--gray-600)'; e.classList.remove('active');
+    });
+    el.style.background = 'var(--black)'; el.style.color='#fff'; el.classList.add('active');
+    renderReports();
+  }
+
+  function renderReports() {
+    const allHistory = getHistory();
+    const history    = filterByDays(allHistory, reportDays);
+    const placeholder = document.getElementById('rp_placeholder');
+    const content    = document.getElementById('rp_content');
+
+    if (!allHistory.length) {
+      if (placeholder) placeholder.style.display='';
+      if (content)     content.style.display='none';
+      return;
+    }
+    if (placeholder) placeholder.style.display='none';
+    if (content)     { content.style.display='flex'; }
+
+    const totalCarrier = history.reduce((s,r)=>s+parseMoney(r.carrierCost||r['Carrier Costs']),0);
+    const totalCust    = history.reduce((s,r)=>s+parseMoney(r.custCost||r['Customer Costs']),0);
+    const totalNet     = totalCust - totalCarrier;
+    const avgMargin    = totalCust>0 ? ((totalNet/totalCust)*100) : 0;
+
+    // Stats strip
+    const statsEl = document.getElementById('rp_stats');
+    if (statsEl) {
+      statsEl.innerHTML = [
+        ['Shipments', history.length, 'in period'],
+        ['Total carrier pay', '$'+Math.round(totalCarrier/1000)+'k', 'paid out'],
+        ['Total revenue', '$'+Math.round(totalCust/1000)+'k', 'charged'],
+        ['Net revenue', '$'+Math.round(totalNet/1000)+'k', 'earned'],
+        ['Avg margin', avgMargin.toFixed(1)+'%', avgMargin>=20?'On target':'Watch this'],
+      ].map(([label,val,sub])=>`
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);">
+          <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">${label}</div>
+          <div style="font-size:20px;font-weight:600;color:var(--black);">${val}</div>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">${sub}</div>
+        </div>`).join('');
+    }
+
+    // Top carriers
+    const carrierMap = {};
+    history.forEach(s => {
+      const name = (s.carrier||s['Carrier']||'Unknown').split(',')[0].trim();
+      if (!carrierMap[name]) carrierMap[name] = { loads:0, pay:0 };
+      carrierMap[name].loads++;
+      carrierMap[name].pay += parseMoney(s.carrierCost||s['Carrier Costs']);
+    });
+    const topCarriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,8);
+    const maxLoads = topCarriers[0]?.[1]?.loads || 1;
+    const carriersEl = document.getElementById('rp_carriers');
+    if (carriersEl) {
+      carriersEl.innerHTML = topCarriers.map(([name,d])=>`
+        <div style="padding:10px 16px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+            <div style="height:4px;background:var(--gray-100);border-radius:2px;margin-top:4px;overflow:hidden;">
+              <div style="height:100%;border-radius:2px;background:var(--green);width:${Math.round((d.loads/maxLoads)*100)}%;"></div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads} loads</div>
+        </div>`).join('');
+    }
+
+    // Top markets
+    const marketMap = {};
+    history.forEach(s => {
+      const o = (s.origin||'').split(',')[0].trim();
+      if (!o) return;
+      marketMap[o] = (marketMap[o]||0)+1;
+    });
+    const topMarkets = Object.entries(marketMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const maxMkt = topMarkets[0]?.[1] || 1;
+    const marketsEl = document.getElementById('rp_markets');
+    if (marketsEl) {
+      marketsEl.innerHTML = topMarkets.map(([city,count])=>`
+        <div style="padding:10px 16px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;color:var(--black);">${city}</div>
+            <div style="height:4px;background:var(--gray-100);border-radius:2px;margin-top:4px;overflow:hidden;">
+              <div style="height:100%;border-radius:2px;background:var(--blue);width:${Math.round((count/maxMkt)*100)}%;"></div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--gray-600);flex-shrink:0;">${count} loads</div>
+        </div>`).join('');
+    }
+
+    // Top lanes
+    const laneMap = {};
+    history.forEach(s => {
+      const o = (s.origin||'').trim();
+      const d = (s.dest||s.destination||'').trim();
+      if (!o||!d) return;
+      const key = o+'→'+d;
+      if (!laneMap[key]) laneMap[key]={origin:o,dest:d,loads:0,carrier:0,cust:0};
+      laneMap[key].loads++;
+      laneMap[key].carrier += parseMoney(s.carrierCost||s['Carrier Costs']);
+      laneMap[key].cust    += parseMoney(s.custCost||s['Customer Costs']);
+    });
+    const topLanes = Object.values(laneMap).sort((a,b)=>b.loads-a.loads).slice(0,10);
+    const lanesEl  = document.getElementById('rp_lanes');
+    if (lanesEl) {
+      lanesEl.innerHTML = topLanes.map(l=>{
+        const avgC = l.carrier/l.loads;
+        const avgR = l.cust/l.loads;
+        const mg   = avgR>0?((avgR-avgC)/avgR*100):0;
+        return `<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
+          <div style="flex:1;padding:10px 16px;font-size:13px;font-weight:500;color:var(--black);">${l.origin} → ${l.dest}</div>
+          <div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${l.loads}</div>
+          <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${avgC.toFixed(0)}</div>
+          <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${avgR.toFixed(0)}</div>
+          <div style="width:90px;padding:10px 12px;font-size:12px;font-weight:500;flex-shrink:0;color:${mg>=20?'var(--green-dark)':mg>=10?'var(--amber-dark)':'var(--red-dark)'};">${mg.toFixed(1)}%</div>
+        </div>`;
+      }).join('');
+    }
+
+    // Equipment breakdown
+    const equipMap = {};
+    history.forEach(s => {
+      const e = (s.equip||s['Equipment needed']||'Unknown').trim();
+      equipMap[e] = (equipMap[e]||0)+1;
+    });
+    const equipEl = document.getElementById('rp_equipment');
+    if (equipEl) {
+      const sorted = Object.entries(equipMap).sort((a,b)=>b[1]-a[1]);
+      const total  = sorted.reduce((s,[,v])=>s+v,0);
+      equipEl.innerHTML = sorted.map(([name,count])=>`
+        <div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:12px 14px;display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:12px;font-weight:500;color:var(--black);">${name}</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">${((count/total)*100).toFixed(1)}% of loads</div>
+          </div>
+          <div style="font-size:18px;font-weight:600;color:var(--black);">${count}</div>
+        </div>`).join('');
+    }
+
+    // Update data badge on rate intel page
+    const badge = document.getElementById('ri_data_badge');
+    if (badge) {
+      badge.textContent = allHistory.length.toLocaleString()+' shipments loaded';
+      badge.style.background='var(--green-light)'; badge.style.color='var(--green-dark)';
+      badge.style.borderColor='#C0DD97';
+    }
+  }
+
+
+
+  // ── SHIPMENT HISTORY IMPORT ──
+  const HISTORY_KEY = 'candor_shipment_history';
+
+  function handleHistoryDrop(e) {
+    const file = e.dataTransfer.files[0];
+    if (file) handleHistoryFile(file);
+  }
+
+  function handleHistoryFile(file) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      showToast('Please upload a CSV file'); return;
+    }
+    const progress    = document.getElementById('sh_progress');
+    const progressTxt = document.getElementById('sh_progress_text');
+    const progressBar = document.getElementById('sh_progress_bar');
+    if (progress) progress.style.display = '';
+    if (progressTxt) progressTxt.textContent = 'Reading file...';
+    if (progressBar) progressBar.style.width = '20%';
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      if (progressBar) progressBar.style.width = '50%';
+      if (progressTxt) progressTxt.textContent = 'Parsing CSV...';
+      setTimeout(() => {
+        try {
+          const text = e.target.result;
+          const shipments = parseShipmentCSV(text);
+          if (progressBar) progressBar.style.width = '80%';
+          if (progressTxt) progressTxt.textContent = 'Saving '+shipments.length+' shipments...';
+          setTimeout(() => {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(shipments));
+            localStorage.setItem('candor_history_date', new Date().toLocaleDateString());
+            if (progressBar) progressBar.style.width = '100%';
+            if (progressTxt) progressTxt.textContent = '✓ '+shipments.length.toLocaleString()+' shipments loaded successfully';
+            updateHistoryStats();
+            showToast(shipments.length.toLocaleString()+' shipments loaded', 'green');
+            setTimeout(() => { if (progress) progress.style.display='none'; }, 3000);
+          }, 200);
+        } catch(err) {
+          if (progressTxt) progressTxt.textContent = 'Error: '+err.message;
+          if (progressBar) { progressBar.style.background='var(--red)'; progressBar.style.width='100%'; }
+          showToast('Error parsing file: '+err.message);
+        }
+      }, 100);
+    };
+    reader.readAsText(file);
+  }
+
+  function parseShipmentCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) throw new Error('File appears empty');
+
+    // Parse header row - handle quoted CSV
+    const headers = parseCSVRow(lines[0]).map(h => h.trim());
+    console.log('CSV Headers:', headers);
+
+    // Map header names to our field names (flexible matching)
+    const colMap = {};
+    headers.forEach((h, i) => {
+      const lower = h.toLowerCase().trim();
+      // Cost columns — check these first before generic 'carrier' check
+      if (lower.includes('carrier') && lower.includes('cost')) colMap.carrierCost = i;
+      else if ((lower.includes('customer') || lower.includes('cust')) && lower.includes('cost')) colMap.custCost = i;
+      // Carrier name — must not include 'cost' or 'code'
+      else if (lower === 'carrier' || (lower.includes('carrier') && !lower.includes('cost') && !lower.includes('code'))) colMap.carrier = i;
+      else if (lower.includes('origin')) colMap.origin = i;
+      else if (lower.includes('destination') || lower === 'dest') colMap.dest = i;
+      else if (lower.includes('pickup') || lower === 'actual pickup date' || (lower.includes('date') && !lower.includes('id'))) colMap.date = i;
+      else if (lower.includes('equipment')) colMap.equip = i;
+      else if (lower.includes('shipment') && lower.includes('id')) colMap.id = i;
+      else if (lower.includes('margin') && lower.includes('%')) colMap.marginPct = i;
+      else if (lower.includes('net') && lower.includes('revenue')) colMap.netRevenue = i;
+    });
+
+    console.log('Column mapping:', colMap);
+    console.log('Final column map:', JSON.stringify(colMap));
+    if (colMap.carrier === undefined) throw new Error('Could not find Carrier column. Headers found: '+headers.join(', '));
+    if (colMap.origin === undefined) throw new Error('Could not find Origin column. Headers found: '+headers.join(', '));
+    if (colMap.carrierCost === undefined) throw new Error('Could not find Carrier Costs column. Headers found: '+headers.join(', '));
+
+    const shipments = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols = parseCSVRow(lines[i]);
+
+      // Clean carrier name - take first carrier if multiple listed
+      const carrierRaw = (cols[colMap.carrier]||'').trim();
+      const carrier = carrierRaw.split(',')[0].trim();
+      if (!carrier) continue;
+
+      // Clean origin/dest - remove ", US" suffix
+      const origin = (cols[colMap.origin]||'').trim().replace(/, US$/i,'').trim();
+      const dest   = colMap.dest !== undefined ? (cols[colMap.dest]||'').trim().replace(/, US$/i,'').trim() : '';
+
+      // Clean money values — handle '$800.00', '$ 800.00', '-', empty
+      const rawCC = (cols[colMap.carrierCost]||'').trim();
+      const rawRC = (cols[colMap.custCost]||'').trim();
+      const carrierCost = (rawCC==='-'||rawCC==='')?0:parseFloat(rawCC.replace(/[^0-9.-]/g,''))||0;
+      const custCost    = (rawRC==='-'||rawRC==='')?0:parseFloat(rawRC.replace(/[^0-9.-]/g,''))||0;
+
+      // Date - extract just the date part
+      const dateRaw = colMap.date !== undefined ? (cols[colMap.date]||'').trim() : '';
+      const date = dateRaw.split(' ')[0] || dateRaw;
+
+      const equip = colMap.equip !== undefined ? (cols[colMap.equip]||'').trim() : '';
+
+      shipments.push({ carrier, origin, dest, date, carrierCost, custCost, equip,
+        netRevenue: custCost - carrierCost,
+        margin: custCost > 0 ? ((custCost-carrierCost)/custCost*100) : 0
+      });
+    }
+
+    if (!shipments.length) throw new Error('No valid shipment rows found');
+    return shipments;
+  }
+
+  function parseCSVRow(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current);
+    return result;
+  }
+
+  function updateHistoryStats() {
+    const history = getHistory();
+    const lastDate = localStorage.getItem('candor_history_date')||'—';
+    const countEl  = document.getElementById('sh_count');
+    const lastEl   = document.getElementById('sh_last_import');
+    const badge    = document.getElementById('sh_badge');
+    if (countEl) countEl.textContent = history.length.toLocaleString();
+    if (lastEl)  lastEl.textContent  = lastDate;
+    if (badge) {
+      badge.textContent = history.length.toLocaleString()+' loaded';
+      badge.style.background = 'var(--green-light)';
+      badge.style.color      = 'var(--green-dark)';
+    }
+  }
+
+  function clearHistory() {
+    if (!confirm('Clear all shipment history data? This cannot be undone.')) return;
+    localStorage.removeItem(HISTORY_KEY);
+    localStorage.removeItem('candor_history_date');
+    updateHistoryStats();
+    showToast('History cleared');
+  }
+
+
+  // Hook up nav links
+  function initNav() {
+    const links = document.querySelectorAll('.nav-link');
+    links[0].onclick = () => { showPage('board'); };
+    links[1].onclick = () => { showPage('lane'); };
+    links[2].onclick = () => { showPage('board'); showToast('Click any carrier name on the board to view their profile'); };
+    links[3].onclick = () => { showPage('rate'); };
+    links[4].onclick = () => { showPage('reports'); };
+    links[5].onclick = () => { showPage('admin'); renderImportLog(); renderFlagList(); renderEquipList(); };
+
+    // Lane search — attach all handlers after JS is fully loaded
+    const lsOrigin  = document.getElementById('ls_origin');
+    const lsDest    = document.getElementById('ls_dest');
+    const lsBtn     = document.getElementById('ls_search_btn');
+    const lsRadius  = document.getElementById('ls_radius');
+    const lsEquip   = document.getElementById('ls_equip');
+
+    if (lsOrigin) lsOrigin.addEventListener('input', lsCheckMode);
+    if (lsDest)   lsDest.addEventListener('input', lsCheckMode);
+    if (lsBtn)    lsBtn.addEventListener('click', runLaneSearch);
+    // Enter key triggers search from either input
+    [lsOrigin, lsDest].forEach(el => {
+      if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') runLaneSearch(); });
+    });
+    // Radius/equip auto re-search
+    if (lsRadius) lsRadius.addEventListener('change', () => { if(document.getElementById('ls_origin').value.trim()) runLaneSearch(); });
+    if (lsEquip)  lsEquip.addEventListener('change',  () => { if(document.getElementById('ls_origin').value.trim()) runLaneSearch(); });
+
+    // History file input
+    const histFile = document.getElementById('historyFileInputEl') || document.getElementById('historyFileInput');
+    if (histFile) histFile.addEventListener('change', e => handleHistoryFile(e.target.files[0]));
+
+    // Rate intel search
+    const riBtn    = document.getElementById('ri_search_btn');
+    const riOrigin = document.getElementById('ri_origin');
+    const riDest   = document.getElementById('ri_dest');
+    if (riBtn)    riBtn.addEventListener('click', runRateSearch);
+    if (riOrigin) riOrigin.addEventListener('keydown', e => { if(e.key==='Enter') runRateSearch(); });
+    if (riDest)   riDest.addEventListener('keydown',   e => { if(e.key==='Enter') runRateSearch(); });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    init();
+    initNav();
+  });
+</script>
+
+<!-- ADMIN NAV CLICK HANDLER - update nav links -->
+<script>
+// Override nav links to support Admin page
+document.addEventListener('DOMContentLoaded', function() {
+  // handled in main script
+});
+</script>
+
+<!-- ADMIN PAGE -->
+<div id="adminPage" style="display:none;">
+
+  <!-- ADMIN TOOLBAR -->
+  <div class="toolbar" style="background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:16px;font-weight:600;color:var(--black);">Admin — Carrier List Import</div>
+      <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Paste a raw carrier email or list — AI will parse it and preview before adding to the board</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;padding:20px 28px;max-width:1200px;">
+
+    <!-- LEFT COL -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- PASTE CARD -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Paste carrier list</div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Paste raw email text, a list, or any format — the parser handles it</div>
+          </div>
+        </div>
+        <div style="padding:16px;">
+          <textarea id="pasteArea" placeholder="Paste carrier email or list here...
+
+Example:
+Hi team, we have available:
+- 1x 53ft dry van — Memphis, TN — ready now
+- 1x Sprinter — Nashville, TN — tomorrow AM
+Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100%;height:160px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:12px;font-size:13px;color:var(--black);font-family:'DM Sans',sans-serif;background:var(--gray-50);resize:none;line-height:1.6;"></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+            <button onclick="parseCarrierList()" style="height:38px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Parse list</button>
+            <button onclick="document.getElementById('pasteArea').value=''" style="height:38px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Clear</button>
+            <span style="font-size:11px;color:var(--gray-400);margin-left:4px;">Supports any format — email, text, copy/paste from anywhere</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PREVIEW CARD -->
+      <div id="previewCard" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Parsed results — review before adding</div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;" id="previewSubtitle"></div>
+          </div>
+          <button onclick="addAllToBoard()" style="height:34px;padding:0 16px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board →</button>
+        </div>
+        <!-- TABLE HEAD -->
+        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+          <div style="width:40px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;"></div>
+          <div style="width:200px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Carrier</div>
+          <div style="width:150px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+          <div style="width:160px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>
+          <div style="width:120px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Phone</div>
+          <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Action</div>
+        </div>
+        <div id="previewRows"></div>
+        <div style="padding:12px 16px;border-top:1px solid var(--gray-200);display:flex;gap:8px;">
+          <button onclick="addAllToBoard()" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board</button>
+          <button onclick="addSelectedToBoard()" style="height:36px;padding:0 16px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:12px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Add selected only</button>
+          <button onclick="discardPreview()" style="height:36px;padding:0 16px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:12px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Discard</button>
+        </div>
+      </div>
+
+      <!-- RECENT IMPORTS LOG -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">Recent imports</div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Last 10 carrier lists added to the board</div>
+        </div>
+        <div id="importLog" style="padding:0;">
+          <div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No imports yet — paste a carrier list above to get started</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COL -->
+    <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- NEW EQUIPMENT FLAGS -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">New equipment flags</div>
+          <span id="flagCount" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--amber-light);color:var(--amber-dark);font-weight:500;display:none;">0 pending</span>
+        </div>
+        <div id="flagList" style="padding:14px 16px;">
+          <div style="font-size:12px;color:var(--gray-400);">No new equipment types flagged yet.</div>
+        </div>
+      </div>
+
+      <!-- TIPS -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+        <div style="font-size:13px;font-weight:600;color:var(--black);margin-bottom:12px;">What the parser looks for</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
+            <strong style="color:var(--black);">Carrier name</strong><br>Any company name or "carrier" mention
+          </div>
+          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
+            <strong style="color:var(--black);">Equipment type</strong><br>Van, reefer, flatbed, sprinter, straight truck, etc.
+          </div>
+          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
+            <strong style="color:var(--black);">Location</strong><br>City + state in any format
+          </div>
+          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
+            <strong style="color:var(--black);">Phone & MC#</strong><br>Any phone number format and MC numbers
+          </div>
+        </div>
+      </div>
+
+      <!-- KNOWN EQUIPMENT LIST -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">Known equipment types</div>
+          <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Parser matches against these automatically</div>
+        </div>
+        <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px;" id="equipList"></div>
+      </div>
+
+      <!-- SHIPMENT HISTORY IMPORT -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Shipment history import</div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Upload your TMS export to power rate intel, carrier history, and reports</div>
+          </div>
+          <span id="sh_badge" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-400);">Not loaded</span>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+
+          <!-- Stats row -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="sh_stats_row">
+            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+              <div style="font-size:11px;color:var(--gray-400);">Shipments loaded</div>
+              <div id="sh_count" style="font-size:18px;font-weight:600;color:var(--black);">—</div>
+            </div>
+            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+              <div style="font-size:11px;color:var(--gray-400);">Last import</div>
+              <div id="sh_last_import" style="font-size:13px;font-weight:500;color:var(--black);padding-top:2px;">—</div>
+            </div>
+          </div>
+
+          <!-- Upload zone -->
+          <div id="sh_upload_zone"
+               onclick="document.getElementById('historyFileInput').click()"
+               ondragover="event.preventDefault();this.style.borderColor='var(--green)';this.style.background='var(--green-light)'"
+               ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)'"
+               ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)';handleHistoryDrop(event)"
+               style="border:1px dashed var(--gray-200);border-radius:var(--radius-md);padding:24px 16px;text-align:center;background:var(--gray-50);cursor:pointer;transition:all 0.15s;">
+            <div style="font-size:24px;margin-bottom:8px;">📂</div>
+            <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Drop your TMS export here</div>
+            <div style="font-size:12px;color:var(--gray-400);">or click to browse</div>
+            <div style="font-size:11px;color:var(--gray-300);margin-top:5px;">Accepts .csv</div>
+            <input type="file" id="historyFileInput" accept=".csv" style="display:none;" id="historyFileInputEl" />
+          </div>
+
+          <!-- Progress -->
+          <div id="sh_progress" style="display:none;padding:10px 12px;background:var(--green-light);border:1px solid #C0DD97;border-radius:var(--radius-sm);">
+            <div style="font-size:12px;font-weight:500;color:var(--green-dark);" id="sh_progress_text">Processing...</div>
+            <div style="margin-top:6px;height:4px;background:#C0DD97;border-radius:2px;overflow:hidden;">
+              <div id="sh_progress_bar" style="height:100%;background:var(--green);width:0%;transition:width 0.3s;border-radius:2px;"></div>
+            </div>
+          </div>
+
+          <!-- Expected columns -->
+          <div style="font-size:11px;color:var(--gray-400);line-height:1.7;">
+            <strong style="color:var(--black);">Expected columns:</strong> Carrier, Origin, Destination, Actual Pickup Date, Carrier Costs, Customer Costs, Equipment needed<br>
+            Extra columns are ignored automatically.
+          </div>
+
+          <!-- Clear button -->
+          <button onclick="clearHistory()" style="height:32px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;width:fit-content;">Clear history data</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- LANE SEARCH PAGE -->
+<div id="laneSearchPage" style="display:none;">
+
+  <!-- SEARCH BAR -->
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;">
+    <div style="display:flex;align-items:center;gap:10px;max-width:960px;flex-wrap:wrap;">
+      <div style="position:relative;flex:1;min-width:180px;">
+        <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--gray-400);" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <input id="ls_origin" type="text" placeholder="Origin city, ST (e.g. Memphis, TN)" style="width:100%;height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px 0 32px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);"  />
+      </div>
+      <div style="color:var(--gray-300);font-size:18px;">→</div>
+      <div style="position:relative;flex:1;min-width:180px;">
+        <input id="ls_dest" type="text" placeholder="Destination (optional)" style="width:100%;height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);"  />
+      </div>
+      <select id="ls_radius" style="height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--gray-50);color:var(--black);min-width:130px;">
+        <option value="50">50 mi radius</option>
+        <option value="100">100 mi radius</option>
+        <option value="150" selected>150 mi radius</option>
+        <option value="200">200 mi radius</option>
+        <option value="300">300 mi radius</option>
+        <option value="9999">Any distance</option>
+      </select>
+      <select id="ls_equip" style="height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--gray-50);color:var(--black);min-width:160px;">
+        <option value="">All equipment</option>
+        <option>Dry van 53ft</option><option>Dry van 48ft</option>
+        <option>Reefer 53ft</option><option>Reefer 48ft</option>
+        <option>Flatbed</option><option>Sprinter</option>
+        <option>Reefer sprinter</option><option>Straight truck</option>
+        <option>Reefer straight truck</option><option>Power only</option>
+      </select>
+      <button id="ls_search_btn" style="height:40px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;">Search</button>
+    </div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
+      <span id="ls_mode_badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;"></span>
+      <span id="ls_summary_text" style="font-size:12px;color:var(--gray-400);"></span>
+    </div>
+  </div>
+
+  <!-- RESULTS AREA -->
+  <div id="ls_results" style="padding:20px 28px;max-width:1200px;">
+    <!-- Default state -->
+    <div id="ls_empty" style="text-align:center;padding:60px 20px;">
+      <div style="font-size:32px;margin-bottom:12px;">🔍</div>
+      <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Search for available capacity</div>
+      <div style="font-size:13px;color:var(--gray-400);">Enter an origin city above to find trucks, carrier history, and rate intel</div>
+    </div>
+    <!-- Results grid -->
+    <div id="ls_grid" style="display:none;display:grid;grid-template-columns:1fr 280px;gap:20px;">
+
+      <!-- MAIN COL -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+
+        <!-- LIVE TRUCKS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>
+              Live trucks nearby
+              <span id="ls_truck_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+            </div>
+            <span style="font-size:12px;color:var(--green);cursor:pointer;" onclick="showPage('board')">View full board →</span>
+          </div>
+          <!-- Table head -->
+          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+            <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
+            <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+            <div style="width:130px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+            <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>
+            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>
+            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Posted</div>
+            <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
+          </div>
+          <div id="ls_truck_rows">
+            <div style="padding:24px;text-align:center;font-size:13px;color:var(--gray-400);">Search to see available trucks</div>
+          </div>
+        </div>
+
+        <!-- CARRIER HISTORY -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span>
+              Carriers with history on this lane
+              <span id="ls_hist_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+            </div>
+          </div>
+          <div id="ls_history_rows">
+            <div style="padding:24px 16px;display:flex;align-items:flex-start;gap:12px;">
+              <div style="font-size:20px;flex-shrink:0;">📂</div>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Shipment history not loaded yet</div>
+                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in the Admin page to unlock carrier lane history, load counts, and average pay rates.</div>
+                <div style="margin-top:10px;">
+                  <span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Go to Admin → Upload history</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RATE INTEL -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);">
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Rate intelligence</div>
+          </div>
+          <div id="ls_rate_content">
+            <div style="padding:24px 16px;display:flex;align-items:flex-start;gap:12px;">
+              <div style="font-size:20px;flex-shrink:0;">💰</div>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Rate data not loaded yet</div>
+                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Once your shipment history is uploaded, you'll see average carrier pay, customer charge, and margin for this lane.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SIDEBAR -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- SEARCH SUMMARY -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:12px;">Search summary</div>
+          <div id="ls_stats" style="display:flex;flex-direction:column;gap:8px;">
+            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Live trucks</div>
+              <div id="ls_stat_trucks" style="font-size:20px;font-weight:500;color:var(--black);">—</div>
+              <div id="ls_stat_trucks_sub" style="font-size:11px;color:var(--gray-400);margin-top:1px;"></div>
+            </div>
+            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Carriers with history</div>
+              <div style="font-size:20px;font-weight:500;color:var(--gray-300);">—</div>
+              <div style="font-size:11px;color:var(--gray-300);margin-top:1px;">Upload history to unlock</div>
+            </div>
+            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Historical shipments</div>
+              <div style="font-size:20px;font-weight:500;color:var(--gray-300);">—</div>
+              <div style="font-size:11px;color:var(--gray-300);margin-top:1px;">Upload history to unlock</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- COMMON EQUIPMENT -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Equipment on the board nearby</div>
+          <div id="ls_equip_tags" style="display:flex;flex-wrap:wrap;gap:6px;">
+            <div style="font-size:12px;color:var(--gray-400);">Search to see equipment nearby</div>
+          </div>
+        </div>
+
+        <!-- QUICK ACTIONS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Quick actions</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button onclick="showPage('admin')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">📋 Add truck manually</button>
+            <button onclick="showPage('admin')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">📂 Upload carrier list</button>
+            <button onclick="showPage('board')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">🚛 View full truck board</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- CARRIER PROFILE PAGE -->
+<div id="carrierProfilePage" style="display:none;">
+  <div style="background:var(--gray-50);min-height:100vh;">
+
+    <!-- BREADCRUMB -->
+    <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 28px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:12px;color:var(--gray-400);">
+        <span onclick="showPage('board')" style="color:var(--green);cursor:pointer;">Truck board</span>
+        <span style="margin:0 6px;">→</span>
+        <span id="cp_breadcrumb" style="color:var(--black);">Carrier profile</span>
+      </div>
+      <div id="cp_dnu_banner_small" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;">🚫 DNU — Do Not Use</div>
+    </div>
+
+    <!-- DNU BANNER -->
+    <div id="cp_dnu_banner" style="display:none;margin:16px 28px 0;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-md);padding:12px 16px;display:flex;align-items:flex-start;gap:12px;">
+      <div style="font-size:16px;flex-shrink:0;">🚫</div>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:600;color:var(--red-dark);margin-bottom:3px;">Do Not Use — this carrier is flagged</div>
+        <div id="cp_dnu_reason_text" style="font-size:12px;color:#791F1F;line-height:1.5;"></div>
+        <div id="cp_dnu_meta" style="font-size:11px;color:var(--red-dark);margin-top:4px;"></div>
+      </div>
+      <button onclick="removeDNU()" style="font-size:11px;color:var(--gray-400);background:none;border:none;cursor:pointer;text-decoration:underline;flex-shrink:0;">Remove flag</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:280px 1fr;gap:20px;padding:16px 28px;max-width:1100px;">
+
+      <!-- LEFT SIDEBAR -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+
+        <!-- CARRIER CARD -->
+        <div id="cp_contact_card" style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:20px 16px 16px;border-bottom:1px solid var(--gray-200);" id="cp_header_inner">
+            <div id="cp_avatar" style="width:48px;height:48px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--green-dark);margin-bottom:12px;">—</div>
+            <div id="cp_name" style="font-size:16px;font-weight:600;color:var(--black);margin-bottom:3px;display:flex;align-items:center;gap:8px;"></div>
+            <div id="cp_mc" style="font-size:12px;color:var(--gray-400);font-family:'DM Mono',monospace;"></div>
+          </div>
+          <div id="cp_contact_rows"></div>
+        </div>
+
+        <!-- EQUIPMENT -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Equipment runs</div>
+          <div id="cp_equip_tags" style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px;">
+            <div style="font-size:12px;color:var(--gray-400);">No equipment data yet</div>
+          </div>
+        </div>
+
+        <!-- NOTES -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Notes</div>
+          <textarea id="cp_notes_input" style="width:100%;height:80px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;line-height:1.5;" placeholder="e.g. Prefers south loads, call before 3pm CST..."></textarea>
+          <button onclick="saveCarrierNotes()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--green);border:none;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Save note</button>
+        </div>
+
+        <!-- DNU TOGGLE -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+            <span>Do Not Use</span>
+            <div id="cp_dnu_toggle" onclick="toggleDNU()" style="width:36px;height:20px;border-radius:10px;background:var(--gray-200);position:relative;cursor:pointer;flex-shrink:0;transition:background 0.2s;">
+              <div id="cp_dnu_knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
+            </div>
+          </div>
+          <div id="cp_dnu_form" style="display:none;">
+            <textarea id="cp_dnu_reason" style="width:100%;height:70px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;" placeholder="Reason for DNU flag (e.g. no shows, rate disputes)..."></textarea>
+            <button onclick="saveDNU()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:var(--red-dark);cursor:pointer;font-family:'DM Sans',sans-serif;">Flag as DNU</button>
+          </div>
+          <div id="cp_dnu_active_info" style="display:none;font-size:12px;color:var(--gray-400);line-height:1.5;"></div>
+        </div>
+
+      </div>
+
+      <!-- MAIN CONTENT -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+
+        <!-- STATS ROW -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total loads</div>
+            <div id="cp_stat_loads" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all time</div>
+          </div>
+          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Avg pay/mi</div>
+            <div id="cp_stat_rpm" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all lanes</div>
+          </div>
+          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total paid</div>
+            <div id="cp_stat_paid" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all time</div>
+          </div>
+          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
+            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Last load</div>
+            <div id="cp_stat_last" style="font-size:16px;font-weight:600;color:var(--black);padding-top:3px;">—</div>
+            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">from history</div>
+          </div>
+        </div>
+
+        <!-- TOP LANES -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Top lanes run</div>
+            <span id="cp_lanes_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+          </div>
+          <div id="cp_lanes_content">
+            <div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
+              <div style="font-size:20px;">📂</div>
+              <div>
+                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No lane history loaded</div>
+                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to see which lanes this carrier has run, load counts, and avg pay.</div>
+                <span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RECENT TRUCK POSTS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);">
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Recent truck posts</div>
+          </div>
+          <div id="cp_posts_content">
+            <div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts from this carrier</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- RATE INTELLIGENCE PAGE -->
+<div id="rateIntelPage" style="display:none;">
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:16px;font-weight:600;color:var(--black);">Rate Intelligence</div>
+      <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Search any lane to see historical pay, charge, and margin data</div>
+    </div>
+    <div id="ri_data_badge" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">No history loaded</div>
+  </div>
+
+  <!-- LANE SEARCH BAR -->
+  <div style="background:var(--gray-50);border-bottom:1px solid var(--gray-200);padding:12px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <input id="ri_origin" type="text" placeholder="Origin city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <div style="color:var(--gray-300);font-size:16px;">→</div>
+    <input id="ri_dest" type="text" placeholder="Destination city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <button id="ri_search_btn" style="height:38px;padding:0 18px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Look up lane</button>
+    <span style="font-size:12px;color:var(--gray-400);">or leave destination blank to see all lanes from an origin</span>
+  </div>
+
+  <div style="padding:20px 28px;max-width:1100px;">
+
+    <!-- PLACEHOLDER -->
+    <div id="ri_placeholder" style="text-align:center;padding:60px 20px;">
+      <div style="font-size:32px;margin-bottom:12px;">💰</div>
+      <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Lane rate intelligence</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your shipment history to unlock rate data, or search a lane above</div>
+      <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="ri_results" style="display:none;flex-direction:column;gap:16px;">
+
+      <!-- RATE CARDS -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="ri_rate_cards"></div>
+
+      <!-- MARGIN BAR -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px 20px;box-shadow:var(--shadow);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">Margin health</div>
+          <div id="ri_margin_label" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div>
+        </div>
+        <div style="height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;">
+          <div id="ri_margin_bar" style="height:100%;border-radius:4px;background:var(--green);transition:width 0.4s;"></div>
+        </div>
+      </div>
+
+      <!-- LANE TABLE -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">Shipments on this lane</div>
+          <span id="ri_lane_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+        </div>
+        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+          <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+          <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Date</div>
+          <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Carrier pay</div>
+          <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Cust charge</div>
+          <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Margin</div>
+        </div>
+        <div id="ri_lane_rows" style="max-height:400px;overflow-y:auto;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- REPORTS PAGE -->
+<div id="reportsPage" style="display:none;">
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;">
+    <div>
+      <div style="font-size:16px;font-weight:600;color:var(--black);">Reports</div>
+      <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Performance overview across carriers, lanes, and markets</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <span class="rp_period active" onclick="setReportPeriod(this,30)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--black);color:#fff;cursor:pointer;">30 days</span>
+      <span class="rp_period" onclick="setReportPeriod(this,90)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);cursor:pointer;border:1px solid var(--gray-200);">90 days</span>
+      <span class="rp_period" onclick="setReportPeriod(this,365)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);cursor:pointer;border:1px solid var(--gray-200);">12 months</span>
+      <span class="rp_period" onclick="setReportPeriod(this,9999)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);cursor:pointer;border:1px solid var(--gray-200);">All time</span>
+    </div>
+  </div>
+
+  <div style="padding:20px 28px;max-width:1200px;">
+
+    <!-- PLACEHOLDER -->
+    <div id="rp_placeholder" style="text-align:center;padding:60px 20px;">
+      <div style="font-size:32px;margin-bottom:12px;">📊</div>
+      <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Reports powered by your shipment history</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your TMS export to unlock carrier rankings, lane volume, margin trends, and market data</div>
+      <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
+    </div>
+
+    <!-- REPORT CONTENT -->
+    <div id="rp_content" style="display:none;flex-direction:column;gap:20px;">
+
+      <!-- STATS STRIP -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;" id="rp_stats"></div>
+
+      <!-- TWO COL -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+        <!-- TOP CARRIERS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Most active carriers</div>
+          <div id="rp_carriers" style="padding:4px 0;"></div>
+        </div>
+
+        <!-- TOP MARKETS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Top origin markets</div>
+          <div id="rp_markets" style="padding:4px 0;"></div>
+        </div>
+      </div>
+
+      <!-- TOP LANES -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Top lanes by volume</div>
+        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+          <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Lane</div>
+          <div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
+          <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg carrier pay</div>
+          <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg cust charge</div>
+          <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg margin</div>
+        </div>
+        <div id="rp_lanes"></div>
+      </div>
+
+      <!-- EQUIPMENT BREAKDOWN -->
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Equipment breakdown</div>
+        <div id="rp_equipment" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px;"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
+<!-- ADMIN PAGE ADDITIONS - appended -->
