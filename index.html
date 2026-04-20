@@ -47,11 +47,11 @@
   .nav-logo { font-size: 16px; font-weight: 600; color: #fff; letter-spacing: 2.5px; }
   .nav-logo span { color: var(--green); }
   .nav-links { display: flex; gap: 4px; }
-  .nav-link { font-size: 12px; color: var(--gray-400); cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); transition: all 0.15s; }
-  .nav-link:hover { color: #fff; background: rgba(255,255,255,0.06); }
-  .nav-link.active { color: #fff; background: rgba(255,255,255,0.1); }
-  .nav-link.disabled { color: #444; cursor: default; }
-  .nav-link.disabled:hover { background: none; color: #444; }
+  .nav-link { font-size: 12px; color: #fff; cursor: pointer; padding: 6px 12px; border-radius: var(--radius-sm); transition: all 0.15s; }
+  .nav-link:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .nav-link.active { color: #fff; background: var(--green); }
+  .nav-link.disabled { color: #fff; cursor: pointer; }
+  .nav-link.disabled:hover { background: rgba(255,255,255,0.1); color: #fff; }
   .nav-user { font-size: 12px; color: var(--gray-400); display: flex; align-items: center; gap: 8px; }
   .nav-avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--green); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #fff; flex-shrink: 0; }
   .sign-out { cursor: pointer; font-size: 11px; color: #555; }
@@ -216,11 +216,25 @@
 
 <!-- TOOLBAR -->
 <div class="toolbar">
+  <!-- Carrier name search -->
   <div class="toolbar-search">
     <svg class="s-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-    <input type="text" placeholder="Search carrier or city..." id="searchInput" oninput="renderBoard()" />
+    <input type="text" placeholder="Search carrier name..." id="searchInput" />
   </div>
-  <select class="filter-select" id="equipFilter" onchange="renderBoard()">
+  <!-- City + radius search -->
+  <div class="toolbar-search">
+    <svg class="s-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+    <input type="text" placeholder="City, ST..." id="boardCityInput" style="width:150px;" />
+  </div>
+  <select class="filter-select" id="boardRadiusFilter" style="min-width:120px;">
+    <option value="9999">Any distance</option>
+    <option value="50">50 mi</option>
+    <option value="100">100 mi</option>
+    <option value="150" selected>150 mi</option>
+    <option value="200">200 mi</option>
+    <option value="300">300 mi</option>
+  </select>
+  <select class="filter-select" id="equipFilter">
     <option value="">All equipment</option>
     <option>Dry van 53ft</option><option>Dry van 48ft</option>
     <option>Reefer 53ft</option><option>Reefer 48ft</option>
@@ -228,23 +242,19 @@
     <option>Reefer sprinter</option><option>Straight truck</option>
     <option>Reefer straight truck</option><option>Power only</option>
   </select>
-  <select class="filter-select" id="stateFilter" onchange="renderBoard()">
-    <option value="">All states</option>
-    <option>TN</option><option>TX</option><option>IL</option><option>GA</option>
-    <option>AR</option><option>KY</option><option>MS</option><option>AL</option>
-    <option>FL</option><option>OH</option><option>MO</option><option>IN</option>
-  </select>
-  <select class="filter-select" id="statusFilter" onchange="renderBoard()">
+  <select class="filter-select" id="statusFilter">
     <option value="">All statuses</option>
     <option>Available</option><option>Contacted</option>
   </select>
   <div class="toolbar-right">
-    <div class="stat-pill"><strong id="totalCount">0</strong> trucks</div>
-    <div class="stat-pill warn"><strong id="staleCount">0</strong> stale</div>
+    <div class="stat-pill" style="background:var(--green-light);border-color:#C0DD97;"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px;"></span><strong id="totalCount">0</strong> truck lists</div>
+    <div class="stat-pill" style="background:var(--blue-light);border-color:#B5D4F4;"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;margin-right:5px;"></span><strong id="inboundCount">0</strong> delivering soon</div>
+
     <div class="legend">
       <div class="legend-item"><span class="dot dot-green"></span>Fresh</div>
       <div class="legend-item"><span class="dot dot-yellow"></span>Aging</div>
-      <div class="legend-item"><span class="dot dot-red"></span>Stale 48h+</div>
+      <div class="legend-item"><span class="dot dot-red"></span>Stale</div>
+      <div class="legend-item"><span class="dot" style="background:var(--blue);"></span>Inbound</div>
     </div>
     <button class="add-btn" onclick="openModal('truck')">+ Add truck</button>
     <button class="add-btn" style="background:#2A2A28;" onclick="openModal('users')">Manage users</button>
@@ -521,26 +531,38 @@
       </div>`;
   }
 
-  function renderBoard() {
+  function renderBoard(boardCoords) {
+    boardCoords = boardCoords || null;
     const trucks = loadTrucks();
     const searchVal = document.getElementById('searchInput').value.toLowerCase();
     const equipVal  = document.getElementById('equipFilter').value.toLowerCase();
-    const stateVal  = document.getElementById('stateFilter').value;
     const statusVal = document.getElementById('statusFilter').value;
-    const search = searchVal; const equip = equipVal; const state = stateVal; const status = statusVal;
+    const boardCity = (document.getElementById('boardCityInput')||{value:''}).value.trim();
+    const boardRadius = parseInt((document.getElementById('boardRadiusFilter')||{value:'9999'}).value);
+    const search = searchVal; const equip = equipVal; const status = statusVal;
 
     const filtered = trucks.filter(t => {
-      if (search && !t.carrier.toLowerCase().includes(search) && !t.city.toLowerCase().includes(search)) return false;
+      if (search && !t.carrier.toLowerCase().includes(search)) return false;
       if (equip && !t.equip.toLowerCase().includes(equip)) return false;
-      if (state && t.state !== state) return false;
       if (status && t.status !== status) return false;
       if (chipFilter === 'stale' && group(t.posted) !== 'stale') return false;
       if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
+      // City radius filter — only apply if we have coords
+      if (boardCity && boardCoords && Array.isArray(boardCoords)) {
+        const tc = getCityCoords(t.city, t.state) || GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
+        if (tc) {
+          const dist = Math.round(haversine(boardCoords[0],boardCoords[1],tc[0],tc[1]));
+          if (boardRadius !== 9999 && dist > boardRadius) return false;
+          t._boardDist = dist;
+        }
+      }
       return true;
     });
 
     document.getElementById('totalCount').textContent = filtered.length;
-    document.getElementById('staleCount').textContent = filtered.filter(t=>group(t.posted)==='stale').length;
+    const staleEl = document.getElementById('staleCount'); if(staleEl) staleEl.textContent = filtered.filter(t=>group(t.posted)==='stale').length;
+    const inboundEl = document.getElementById('inboundCount');
+    if (inboundEl) inboundEl.textContent = getInboundTrucks().length;
 
     const groups = { fresh:[], aging:[], stale:[] };
     filtered.forEach(t => groups[group(t.posted)].push(t));
@@ -1073,239 +1095,104 @@
 
 
   // ── LANE SEARCH FUNCTIONS ──
-  // ── CITY COORDINATES — large built-in database ──
-  // Format: 'city st': [lat, lon]
+  // ── GEOCODING — live lookup via OpenStreetMap Nominatim ──
+  const GEO_CACHE = {};
+
+  async function geocode(cityState) {
+    const key = cityState.toLowerCase().trim();
+    if (GEO_CACHE[key]) return GEO_CACHE[key];
+    try {
+      const q = encodeURIComponent(cityState.trim() + ', USA');
+      const url = 'https://nominatim.openstreetmap.org/search?q='+q+'&format=json&limit=1&countrycodes=us';
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'CandorCarrierBoard/1.0' } });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        GEO_CACHE[key] = coords;
+        return coords;
+      }
+    } catch(e) { console.warn('Geocode failed for:', cityState, e.message); }
+    return null;
+  }
+
+  // Fallback coordinate table for common cities (instant, no API call)
   const CC = {
-    // Tennessee
     'memphis tn':[35.1495,-90.0490],'nashville tn':[36.1627,-86.7816],
-    'knoxville tn':[35.9606,-83.9207],'chattanooga tn':[35.0456,-85.3097],
-    'clarksville tn':[36.5298,-87.3595],'murfreesboro tn':[35.8456,-86.3903],
-    'franklin tn':[35.9251,-86.8689],'jackson tn':[35.6145,-88.8139],
-    'johnson city tn':[36.3134,-82.3535],'bartlett tn':[35.2045,-89.8742],
-    'hendersonville tn':[36.3048,-86.6200],'kingsport tn':[36.5484,-82.5618],
-    'collierville tn':[35.0420,-89.6645],'smyrna tn':[35.9829,-86.5186],
-    'cleveland tn':[35.1595,-84.8766],'brentwood tn':[36.0334,-86.7827],
-    // Texas
-    'dallas tx':[32.7767,-96.7970],'houston tx':[29.7604,-95.3698],
-    'san antonio tx':[29.4241,-98.4936],'austin tx':[30.2672,-97.7431],
-    'fort worth tx':[32.7555,-97.3308],'el paso tx':[31.7619,-106.4850],
-    'arlington tx':[32.7357,-97.1081],'corpus christi tx':[27.8006,-97.3964],
-    'plano tx':[33.0198,-96.6989],'lubbock tx':[33.5779,-101.8552],
-    'laredo tx':[27.5306,-99.4803],'irving tx':[32.8140,-96.9489],
-    'garland tx':[32.9126,-96.6389],'amarillo tx':[35.2220,-101.8313],
-    'grand prairie tx':[32.7460,-97.0208],'mckinney tx':[33.1972,-96.6397],
-    'mesquite tx':[32.7668,-96.5992],'killeen tx':[31.1171,-97.7278],
-    'waco tx':[31.5493,-97.1467],'beaumont tx':[30.0860,-94.1018],
-    'midland tx':[31.9973,-102.0779],'odessa tx':[31.8457,-102.3676],
-    'abilene tx':[32.4487,-99.7331],'round rock tx':[30.5083,-97.6789],
-    'richardson tx':[32.9483,-96.7299],'lewisville tx':[33.0462,-96.9942],
-    'tyler tx':[32.3513,-95.3011],'pearland tx':[29.5635,-95.2860],
-    'college station tx':[30.6280,-96.3344],'carrollton tx':[32.9537,-96.8903],
-    // Illinois
-    'chicago il':[41.8781,-87.6298],'aurora il':[41.7606,-88.3201],
-    'rockford il':[42.2711,-89.0940],'joliet il':[41.5250,-88.0817],
-    'naperville il':[41.7508,-88.1535],'springfield il':[39.7817,-89.6501],
-    'peoria il':[40.6936,-89.5890],'elgin il':[42.0354,-88.2826],
-    'waukegan il':[42.3636,-87.8448],'champaign il':[40.1164,-88.2434],
-    'bloomington il':[40.4842,-88.9937],'decatur il':[39.8403,-88.9548],
-    'evanston il':[42.0450,-87.6877],'schaumburg il':[42.0334,-88.0834],
-    'bolingbrook il':[41.6986,-88.0684],'palatine il':[42.1103,-88.0340],
-    'skokie il':[42.0324,-87.7416],'des plaines il':[42.0336,-87.8834],
-    'orland park il':[41.6031,-87.8540],'tinley park il':[41.5731,-87.7873],
-    // Michigan
-    'detroit mi':[42.3314,-83.0458],'grand rapids mi':[42.9634,-85.6681],
-    'warren mi':[42.4775,-83.0277],'sterling heights mi':[42.5803,-83.0302],
-    'lansing mi':[42.7325,-84.5555],'ann arbor mi':[42.2808,-83.7430],
-    'flint mi':[43.0125,-83.6875],'dearborn mi':[42.3223,-83.1763],
-    'livonia mi':[42.3684,-83.3527],'westland mi':[42.3242,-83.4002],
-    'troy mi':[42.6064,-83.1498],'farmington hills mi':[42.4989,-83.3677],
-    'kalamazoo mi':[42.2917,-85.5872],'wyoming mi':[42.9134,-85.7053],
-    'southfield mi':[42.4734,-83.2219],'rochester hills mi':[42.6581,-83.1499],
-    'taylor mi':[42.2406,-83.2697],'pontiac mi':[42.6389,-83.2911],
-    'east lansing mi':[42.7368,-84.4839],'battle creek mi':[42.3212,-85.1797],
-    'saginaw mi':[43.4195,-83.9508],'midland mi':[43.6156,-84.2472],
-    'muskegon mi':[43.2342,-86.2484],'holland mi':[42.7876,-86.1089],
-    'wixom mi':[42.5248,-83.5360],'macomb mi':[42.6659,-82.9218],
-    'west bloomfield mi':[42.5537,-83.3777],'monroe mi':[41.9161,-83.3974],
-    // Georgia
-    'atlanta ga':[33.7490,-84.3880],'columbus ga':[32.4610,-84.9877],
-    'savannah ga':[32.0809,-81.0912],'athens ga':[33.9519,-83.3576],
-    'macon ga':[32.8407,-83.6324],'augusta ga':[33.4735,-82.0105],
-    'sandy springs ga':[33.9304,-84.3733],'roswell ga':[34.0232,-84.3616],
-    'albany ga':[31.5785,-84.1557],'marietta ga':[33.9526,-84.5499],
-    'smyrna ga':[33.8840,-84.5144],'warner robins ga':[32.6130,-83.5996],
-    'johns creek ga':[34.0289,-84.1986],'alpharetta ga':[34.0754,-84.2941],
-    'lawrenceville ga':[33.9565,-83.9877],'newnan ga':[33.3807,-84.7997],
-    'cartersville ga':[34.1651,-84.7999],'rome ga':[34.2570,-85.1647],
-    // Ohio
-    'columbus oh':[39.9612,-82.9988],'cleveland oh':[41.4993,-81.6944],
-    'cincinnati oh':[39.1031,-84.5120],'toledo oh':[41.6528,-83.5379],
-    'akron oh':[41.0814,-81.5190],'dayton oh':[39.7589,-84.1916],
-    'parma oh':[41.3845,-81.7229],'canton oh':[40.7989,-81.3784],
-    'youngstown oh':[41.0998,-80.6495],'lorain oh':[41.4523,-82.1824],
-    'hamilton oh':[39.3995,-84.5613],'springfield oh':[39.9242,-83.8088],
-    'kettering oh':[39.6895,-84.1688],'elyria oh':[41.3681,-82.1074],
-    'lakewood oh':[41.4820,-81.7982],'cuyahoga falls oh':[41.1334,-81.4846],
-    'moraine oh':[39.6859,-84.2327],
-    // Indiana
-    'indianapolis in':[39.7684,-86.1581],'fort wayne in':[41.0793,-85.1394],
-    'evansville in':[37.9748,-87.5558],'south bend in':[41.6764,-86.2520],
-    'carmel in':[39.9784,-86.1180],'fishers in':[39.9567,-85.9669],
-    'bloomington in':[39.1653,-86.5264],'hammond in':[41.5834,-87.5001],
-    'gary in':[41.5934,-87.3465],'lafayette in':[40.4167,-86.8753],
-    'muncie in':[40.1934,-85.3864],'terre haute in':[39.4667,-87.4139],
-    'greensburg in':[39.3370,-85.4847],'camby in':[39.6428,-86.3244],
-    // Kentucky
+    'chicago il':[41.8781,-87.6298],'dallas tx':[32.7767,-96.7970],
+    'houston tx':[29.7604,-95.3698],'atlanta ga':[33.7490,-84.3880],
+    'detroit mi':[42.3314,-83.0458],'lansing mi':[42.7325,-84.5555],
+    'indianapolis in':[39.7684,-86.1581],'columbus oh':[39.9612,-82.9988],
     'louisville ky':[38.2527,-85.7585],'lexington ky':[38.0406,-84.5037],
-    'bowling green ky':[36.9685,-86.4808],'owensboro ky':[37.7719,-87.1111],
-    'covington ky':[39.0837,-84.5086],'hopkinsville ky':[36.8656,-87.4886],
-    'richmond ky':[37.7479,-84.2947],'florence ky':[38.9989,-84.6246],
-    'georgetown ky':[38.2098,-84.5588],'harrodsburg ky':[37.7626,-84.8430],
-    'crutchfield ky':[36.8309,-88.9856],'calvert city ky':[37.0337,-88.3503],
-    // North Carolina
-    'charlotte nc':[35.2271,-80.8431],'raleigh nc':[35.7796,-78.6382],
-    'greensboro nc':[36.0726,-79.7920],'durham nc':[35.9940,-78.8986],
-    'winston-salem nc':[36.0999,-80.2442],'fayetteville nc':[35.0527,-78.8784],
-    'cary nc':[35.7915,-78.7811],'wilmington nc':[34.2257,-77.9447],
-    'high point nc':[35.9557,-80.0053],'concord nc':[35.4088,-80.5796],
-    'fuquay varina nc':[35.5843,-78.7997],'asheville nc':[35.5951,-82.5515],
-    // Wisconsin
-    'milwaukee wi':[43.0389,-87.9065],'madison wi':[43.0731,-89.4012],
-    'green bay wi':[44.5133,-88.0133],'kenosha wi':[42.5847,-87.8212],
-    'racine wi':[42.7261,-87.7829],'appleton wi':[44.2619,-88.4154],
-    'waukesha wi':[43.0117,-88.2315],'oshkosh wi':[44.0247,-88.5426],
-    'eau claire wi':[44.8113,-91.4985],'janesville wi':[42.6828,-89.0187],
-    'franksville wi':[42.7667,-87.9084],
-    // Iowa
-    'des moines ia':[41.5868,-93.6250],'cedar rapids ia':[41.9779,-91.6656],
-    'davenport ia':[41.5236,-90.5776],'sioux city ia':[42.4999,-96.4003],
-    'iowa city ia':[41.6611,-91.5302],'waterloo ia':[42.4928,-92.3426],
-    'dubuque ia':[42.5006,-90.6646],'council bluffs ia':[41.2619,-95.8608],
-    // Arkansas
-    'little rock ar':[34.7465,-92.2896],'fort smith ar':[35.3859,-94.3985],
-    'fayetteville ar':[36.0822,-94.1719],'springdale ar':[36.1867,-94.1288],
-    'jonesboro ar':[35.8423,-90.7043],'west memphis ar':[35.1465,-90.1845],
-    // Alabama
+    'st louis mo':[38.6270,-90.1994],'kansas city mo':[39.0997,-94.5786],
+    'milwaukee wi':[43.0389,-87.9065],'minneapolis mn':[44.9778,-93.2650],
+    'omaha ne':[41.2565,-95.9345],'des moines ia':[41.5868,-93.6250],
+    'denver co':[39.7392,-104.9903],'phoenix az':[33.4484,-112.0740],
+    'seattle wa':[47.6062,-122.3321],'portland or':[45.5051,-122.6750],
+    'los angeles ca':[34.0522,-118.2437],'san francisco ca':[37.7749,-122.4194],
+    'san diego ca':[32.7157,-117.1611],'sacramento ca':[38.5816,-121.4944],
+    'las vegas nv':[36.1699,-115.1398],'salt lake city ut':[40.7608,-111.8910],
+    'albuquerque nm':[35.0844,-106.6504],'oklahoma city ok':[35.4676,-97.5164],
+    'tulsa ok':[36.1540,-95.9928],'little rock ar':[34.7465,-92.2896],
     'birmingham al':[33.5186,-86.8104],'montgomery al':[32.3792,-86.3077],
-    'huntsville al':[34.7304,-86.5861],'mobile al':[30.6954,-88.0399],
-    'tuscaloosa al':[33.2098,-87.5692],'hoover al':[33.4045,-86.8114],
-    'madison al':[34.6993,-86.7483],
-    // Mississippi
-    'jackson ms':[32.2988,-90.1848],'gulfport ms':[30.3674,-89.0928],
-    'southaven ms':[34.9890,-89.9923],'hattiesburg ms':[31.3271,-89.2903],
-    // Missouri
-    'kansas city mo':[39.0997,-94.5786],'st louis mo':[38.6270,-90.1994],
-    'springfield mo':[37.2090,-93.2923],'columbia mo':[38.9517,-92.3341],
-    'independence mo':[39.0911,-94.4155],'lees summit mo':[38.9108,-94.3822],
-    "o'fallon mo":[38.8106,-90.6999],'st joseph mo':[39.7675,-94.8467],
-    // Minnesota
-    'minneapolis mn':[44.9778,-93.2650],'st paul mn':[44.9537,-93.0900],
-    'rochester mn':[44.0121,-92.4802],'duluth mn':[46.7867,-92.1005],
-    'bloomington mn':[44.8408,-93.3477],'brooklyn park mn':[45.0941,-93.3752],
-    // Nebraska
-    'omaha ne':[41.2565,-95.9345],'lincoln ne':[40.8136,-96.7026],
-    'bellevue ne':[41.1544,-95.9146],'grand island ne':[40.9264,-98.3420],
-    // Kansas
-    'wichita ks':[37.6872,-97.3301],'overland park ks':[38.9822,-94.6708],
-    'kansas city ks':[39.1155,-94.6268],'topeka ks':[39.0558,-95.6890],
-    'olathe ks':[38.8814,-94.8191],
-    // Oklahoma
-    'oklahoma city ok':[35.4676,-97.5164],'tulsa ok':[36.1540,-95.9928],
-    'norman ok':[35.2226,-97.4395],'broken arrow ok':[36.0526,-95.7908],
-    'lawton ok':[34.6036,-98.3959],
-    // Louisiana
-    'new orleans la':[29.9511,-90.0715],'baton rouge la':[30.4515,-91.1871],
-    'shreveport la':[32.5252,-93.7502],'metairie la':[29.9827,-90.1795],
-    'lafayette la':[30.2241,-92.0198],
-    // Florida
-    'jacksonville fl':[30.3322,-81.6557],'miami fl':[25.7617,-80.1918],
-    'tampa fl':[27.9506,-82.4572],'orlando fl':[28.5383,-81.3792],
-    'st petersburg fl':[27.7676,-82.6403],'hialeah fl':[25.8576,-80.2781],
-    'tallahassee fl':[30.4518,-84.2727],'fort lauderdale fl':[26.1224,-80.1373],
-    'port st lucie fl':[27.2939,-80.3503],'cape coral fl':[26.5629,-81.9495],
-    'pembroke pines fl':[26.0078,-86.1397],'hollywood fl':[26.0112,-80.1495],
-    'miramar fl':[25.9860,-80.3032],'gainesville fl':[29.6516,-82.3248],
-    'coral springs fl':[26.2711,-80.2706],'clearwater fl':[27.9659,-82.8001],
-    // South Carolina
-    'columbia sc':[34.0007,-81.0348],'charleston sc':[32.7765,-79.9311],
-    'north charleston sc':[32.8546,-79.9748],'rock hill sc':[34.9249,-81.0251],
-    'greenville sc':[34.8526,-82.3940],'summerville sc':[33.0185,-80.1756],
-    // Virginia
-    'virginia beach va':[36.8529,-75.9780],'chesapeake va':[36.7682,-76.2875],
-    'norfolk va':[36.8508,-76.2859],'richmond va':[37.5407,-77.4360],
-    'newport news va':[37.0871,-76.4730],'roanoke va':[37.2710,-79.9414],
-    // Maryland
-    'baltimore md':[39.2904,-76.6122],'frederick md':[39.4143,-77.4105],
-    'rockville md':[39.0840,-77.1528],'gaithersburg md':[39.1434,-77.2014],
-    // Pennsylvania
+    'jackson ms':[32.2988,-90.1848],'new orleans la':[29.9511,-90.0715],
+    'baton rouge la':[30.4515,-91.1871],'shreveport la':[32.5252,-93.7502],
+    'charlotte nc':[35.2271,-80.8431],'raleigh nc':[35.7796,-78.6382],
+    'richmond va':[37.5407,-77.4360],'baltimore md':[39.2904,-76.6122],
     'philadelphia pa':[39.9526,-75.1652],'pittsburgh pa':[40.4406,-79.9959],
-    'allentown pa':[40.6084,-75.4902],'erie pa':[42.1292,-80.0851],
-    'reading pa':[40.3356,-75.9269],'scranton pa':[41.4090,-75.6624],
-    // New York
     'new york ny':[40.7128,-74.0060],'buffalo ny':[42.8864,-78.8784],
-    'rochester ny':[43.1566,-77.6088],'yonkers ny':[40.9312,-73.8988],
-    'syracuse ny':[43.0481,-76.1474],'albany ny':[42.6526,-73.7562],
-    'staten island ny':[40.5795,-74.1502],
-    // New Jersey
-    'newark nj':[40.7357,-74.1724],'jersey city nj':[40.7178,-74.0431],
-    'paterson nj':[40.9168,-74.1719],'elizabeth nj':[40.6640,-74.2107],
-    // Colorado
-    'denver co':[39.7392,-104.9903],'colorado springs co':[38.8339,-104.8214],
-    'aurora co':[39.7294,-104.8319],'fort collins co':[40.5853,-105.0844],
-    'lakewood co':[39.7047,-105.0814],'thornton co':[39.8680,-104.9719],
-    'pueblo co':[38.2544,-104.6091],
-    // Arizona
-    'phoenix az':[33.4484,-112.0740],'tucson az':[32.2226,-110.9747],
-    'mesa az':[33.4152,-111.8315],'chandler az':[33.3062,-111.8413],
-    'scottsdale az':[33.4942,-111.9261],'gilbert az':[33.3528,-111.7890],
-    'tempe az':[33.4255,-111.9400],'peoria az':[33.5806,-112.2374],
-    'surprise az':[33.6292,-112.3679],'yuma az':[32.6927,-114.6277],
-    // Nevada
-    'las vegas nv':[36.1699,-115.1398],'henderson nv':[36.0395,-114.9817],
-    'reno nv':[39.5296,-119.8138],'north las vegas nv':[36.1989,-115.1175],
-    // California
-    'los angeles ca':[34.0522,-118.2437],'san diego ca':[32.7157,-117.1611],
-    'san jose ca':[37.3382,-121.8863],'san francisco ca':[37.7749,-122.4194],
-    'fresno ca':[36.7378,-119.7871],'sacramento ca':[38.5816,-121.4944],
-    'long beach ca':[33.7701,-118.1937],'oakland ca':[37.8044,-122.2712],
-    'bakersfield ca':[35.3733,-119.0187],'anaheim ca':[33.8366,-117.9143],
-    'riverside ca':[33.9806,-117.3755],'stockton ca':[37.9577,-121.2908],
-    'irvine ca':[33.6846,-117.8265],'chula vista ca':[32.6401,-117.0842],
-    'modesto ca':[37.6391,-120.9969],'san bernardino ca':[34.1083,-117.2898],
-    // Washington
-    'seattle wa':[47.6062,-122.3321],'spokane wa':[47.6588,-117.4260],
-    'tacoma wa':[47.2529,-122.4443],'vancouver wa':[45.6387,-122.6615],
-    'bellevue wa':[47.6101,-122.2015],'kent wa':[47.3809,-122.2348],
-    // Oregon
-    'portland or':[45.5051,-122.6750],'eugene or':[44.0521,-123.0868],
-    'salem or':[44.9429,-123.0351],'gresham or':[45.5001,-122.4302],
-    // Utah
-    'salt lake city ut':[40.7608,-111.8910],'west valley city ut':[40.6916,-112.0010],
-    'provo ut':[40.2338,-111.6585],'west jordan ut':[40.6097,-111.9391],
-    // New Mexico
-    'albuquerque nm':[35.0844,-106.6504],'las cruces nm':[32.3199,-106.7637],
-    'rio rancho nm':[35.2328,-106.6630],
-    // Idaho
-    'boise id':[43.6150,-116.2023],'nampa id':[43.5407,-116.5635],
-    'meridian id':[43.6121,-116.3915],'idaho falls id':[43.4917,-112.0330],
-    // Montana
-    'billings mt':[45.7833,-108.5007],'missoula mt':[46.8721,-113.9940],
-    'great falls mt':[47.5002,-111.3008],
-    // North Dakota
-    'fargo nd':[46.8772,-96.7898],'bismarck nd':[46.8083,-100.7837],
-    // South Dakota
-    'sioux falls sd':[43.5446,-96.7311],'rapid city sd':[44.0805,-103.2310],
-    // Wyoming
-    'cheyenne wy':[41.1400,-104.8202],'casper wy':[42.8501,-106.3252],
-    // Alaska & Hawaii (just in case)
-    'anchorage ak':[61.2181,-149.9003],'honolulu hi':[21.3069,-157.8583]
+    'boston ma':[42.3601,-71.0589],'jacksonville fl':[30.3322,-81.6557],
+    'miami fl':[25.7617,-80.1918],'tampa fl':[27.9506,-82.4572],
+    'orlando fl':[28.5383,-81.3792],'austin tx':[30.2672,-97.7431],
+    'san antonio tx':[29.4241,-98.4936],'fort worth tx':[32.7555,-97.3308],
+    'el paso tx':[31.7619,-106.4850],'west memphis ar':[35.1465,-90.1845],
+    'knoxville tn':[35.9606,-83.9207],'chattanooga tn':[35.0456,-85.3097],
+    'clarksville tn':[36.5298,-87.3595],'jackson tn':[35.6145,-88.8139],
+    'grand rapids mi':[42.9634,-85.6681],'ann arbor mi':[42.2808,-83.7430],
+    'flint mi':[43.0125,-83.6875],'sterling heights mi':[42.5803,-83.0302],
+    'east lansing mi':[42.7368,-84.4839],'wixom mi':[42.5248,-83.5360],
+    'davenport ia':[41.5236,-90.5776],'cedar rapids ia':[41.9779,-91.6656],
+    'green bay wi':[44.5133,-88.0133],'madison wi':[43.0731,-89.4012],
+    'naperville il':[41.7508,-88.1535],'aurora il':[41.7606,-88.3201],
+    'rockford il':[42.2711,-89.0940],'springfield il':[39.7817,-89.6501],
+    'fort wayne in':[41.0793,-85.1394],'south bend in':[41.6764,-86.2520],
+    'evansville in':[37.9748,-87.5558],'bloomington in':[39.1653,-86.5264],
+    'bowling green ky':[36.9685,-86.4808],'owensboro ky':[37.7719,-87.1111],
+    'georgetown ky':[38.2098,-84.5588],'harrodsburg ky':[37.7626,-84.8430],
+    'calvert city ky':[37.0337,-88.3503],'crutchfield ky':[36.8309,-88.9856],
+    'savannah ga':[32.0809,-81.0912],'macon ga':[32.8407,-83.6324],
+    'lawrenceville ga':[33.9565,-83.9877],'newnan ga':[33.3807,-84.7997],
+    'cartersville ga':[34.1651,-84.7999],'columbus ga':[32.4610,-84.9877],
+    'fuquay varina nc':[35.5843,-78.7997],'greensboro nc':[36.0726,-79.7920],
+    'durham nc':[35.9940,-78.8986],'asheville nc':[35.5951,-82.5515],
+    'moraine oh':[39.6859,-84.2327],'akron oh':[41.0814,-81.5190],
+    'toledo oh':[41.6528,-83.5379],'cleveland oh':[41.4993,-81.6944],
+    'dayton oh':[39.7589,-84.1916],'cincinnati oh':[39.1031,-84.5120],
+    'madison al':[34.6993,-86.7483],'huntsville al':[34.7304,-86.5861],
+    'camby in':[39.6428,-86.3244],'greensburg in':[39.3370,-85.4847],
+    'staten island ny':[40.5795,-74.1502],'dubuque ia':[42.5006,-90.6646],
+    'franksville wi':[42.7667,-87.9084],'macomb mi':[42.6659,-82.9218],
+    'west bloomfield mi':[42.5537,-83.3777],'monroe mi':[41.9161,-83.3974],
+    'arlington tx':[32.7357,-97.1081],'plano tx':[33.0198,-96.6989],
+    'waco tx':[31.5493,-97.1467],'lubbock tx':[33.5779,-101.8552],
+    'amarillo tx':[35.2220,-101.8313],'beaumont tx':[30.0860,-94.1018],
+    'columbia sc':[34.0007,-81.0348],'charleston sc':[32.7765,-79.9311],
+    'wichita ks':[37.6872,-97.3301],'topeka ks':[39.0558,-95.6890],
+    'fargo nd':[46.8772,-96.7898],'sioux falls sd':[43.5446,-96.7311],
+    'billings mt':[45.7833,-108.5007],'boise id':[43.6150,-116.2023],
+    'spokane wa':[47.6588,-117.4260],'tacoma wa':[47.2529,-122.4443],
+    'fresno ca':[36.7378,-119.7871],'reno nv':[39.5296,-119.8138],
+    'colorado springs co':[38.8339,-104.8214],'aurora co':[39.7294,-104.8319],
+    'tucson az':[32.2226,-110.9747],'mesa az':[33.4152,-111.8315],
+    'north platte ne':[41.1239,-100.7654],'grand island ne':[40.9264,-98.3420],
+    'melrose park il':[41.9006,-87.8617],'des plaines il':[42.0336,-87.8834],
+    'burleson tx':[32.5421,-97.3208],'pearland tx':[29.5635,-95.2860]
   };
 
   function getCityCoords(city, state) {
     if (!city || !state) return null;
     const key = (city+' '+state).toLowerCase().trim();
     if (CC[key]) return CC[key];
-    // Partial match — try just city name with state
+    // Try partial match
     const cityLower = city.toLowerCase().trim();
     for (const [k,v] of Object.entries(CC)) {
       if (k.endsWith(' '+state.toLowerCase()) && k.startsWith(cityLower)) return v;
@@ -1313,7 +1200,7 @@
     return null;
   }
 
-  function haversine(lat1, lon1, lat2, lon2) {
+    function haversine(lat1, lon1, lat2, lon2) {
     const R = 3959;
     const dLat = (lat2-lat1)*Math.PI/180;
     const dLon = (lon2-lon1)*Math.PI/180;
@@ -1339,11 +1226,12 @@
     }
   }
 
-  function runLaneSearch() {
+  async function runLaneSearch() {
     const originEl = document.getElementById('ls_origin');
     const destEl   = document.getElementById('ls_dest');
     const radEl    = document.getElementById('ls_radius');
     const eqEl     = document.getElementById('ls_equip');
+    const btn      = document.getElementById('ls_search_btn');
     if (!originEl) return;
 
     const originRaw = originEl.value.trim();
@@ -1353,40 +1241,53 @@
 
     if (!originRaw) { showToast('Enter an origin city to search'); return; }
 
-    const parts      = originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+    // Show loading
+    if (btn) { btn.textContent = 'Searching...'; btn.disabled = true; }
+
+    // Geocode origin — try cache first, then API
+    let originCoords = null;
+    const parts    = originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
     const originCity = parts ? parts[1].trim() : originRaw;
     const originSt   = parts ? parts[2].trim().toUpperCase() : '';
-    const originCoords = getCityCoords(originCity, originSt);
 
+    originCoords = getCityCoords(originCity, originSt);
+    if (!originCoords) {
+      originCoords = await geocode(originRaw);
+    }
+
+    // Geocode all truck locations in parallel (cache + API)
     const trucks = loadTrucks();
-    const results = [];
+    const uniqueLocs = [...new Set(trucks.map(t => t.city+', '+t.state))];
+    await Promise.allSettled(uniqueLocs.map(async loc => {
+      const p = loc.split(', ');
+      if (!getCityCoords(p[0], p[1]||'')) {
+        const coords = await geocode(loc);
+        if (coords) GEO_CACHE[loc.toLowerCase()] = coords;
+      }
+    }));
 
+    const results = [];
     for (const t of trucks) {
       if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
       let distance = null;
       let include = false;
 
       if (originCoords) {
-        const tc = getCityCoords(t.city, t.state);
+        let tc = getCityCoords(t.city, t.state);
+        if (!tc) tc = GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
         if (tc) {
           distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
           include = (radius === 9999 || distance <= radius);
-        } else {
-          // Truck city not in db — include it but show no distance
-          include = true;
-        }
+        } else { include = true; }
       } else {
-        // Origin not found — match by state or show all
         include = !originSt || t.state === originSt;
-        if (!originSt) showToast('"'+originRaw+'" not found in database — showing all trucks');
+        if (!originSt) showToast('"'+originRaw+'" not found — showing all trucks');
       }
-
       if (include) results.push({...t, distance});
     }
-
     results.sort((a,b) => (a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
 
-    // Also find inbound trucks delivering near this origin
+    // Inbound trucks near origin
     const inbound = getInboundTrucks();
     const inboundResults = [];
     for (const t of inbound) {
@@ -1394,7 +1295,8 @@
       let distance = null;
       let include = false;
       if (originCoords) {
-        const tc = getCityCoords(t.city, t.state);
+        let tc = getCityCoords(t.city, t.state);
+        if (!tc) tc = GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
         if (tc) {
           distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
           include = (radius === 9999 || distance <= radius);
@@ -1404,6 +1306,7 @@
     }
     inboundResults.sort((a,b)=>a.daysOut-b.daysOut);
 
+    if (btn) { btn.textContent = 'Search'; btn.disabled = false; }
     renderLaneResults(results, originRaw, destRaw, radius, inboundResults);
   }
 
@@ -1492,14 +1395,61 @@
 
     const laneText = dest ? origin+' → '+dest : 'around '+origin;
     const histRowsEl = document.getElementById('ls_history_rows');
+    const histCountEl = document.getElementById('ls_hist_count');
     if (histRowsEl) {
-      histRowsEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
-        <div style="font-size:20px;flex-shrink:0;">📂</div>
-        <div>
-          <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded for ${laneText}</div>
-          <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export to see which carriers have run this lane, load counts, and avg pay rates.</div>
-          <div style="margin-top:8px;"><span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>
-        </div></div>`;
+      const history = getHistory();
+      if (!history.length) {
+        histRowsEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
+          <div style="font-size:20px;flex-shrink:0;">📂</div>
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div>
+            <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to unlock carrier lane history.</div>
+            <div style="margin-top:8px;"><span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>
+          </div></div>`;
+      } else {
+        // Filter history matching this search
+        const originLower = origin.toLowerCase();
+        const destLower   = dest.toLowerCase();
+        const matches = history.filter(s => {
+          const o = (s.origin||'').toLowerCase();
+          const d = (s.dest||'').toLowerCase();
+          const originMatch = o.includes(originLower.split(',')[0].trim());
+          const destMatch   = !dest || d.includes(destLower.split(',')[0].trim());
+          return originMatch && destMatch;
+        });
+
+        if (!matches.length) {
+          histRowsEl.innerHTML=`<div style="padding:20px 16px;text-align:center;font-size:13px;color:var(--gray-400);">No history found for ${laneText}</div>`;
+          if (histCountEl) histCountEl.textContent='0 carriers';
+        } else {
+          // Group by carrier
+          const carrierMap = {};
+          for (const s of matches) {
+            const name = (s.carrier||'Unknown').split(',')[0].trim();
+            if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:''};
+            carrierMap[name].loads++;
+            carrierMap[name].totalPay += s.carrierCost||0;
+            if (!carrierMap[name].lastDate || new Date(s.date)>new Date(carrierMap[name].lastDate)) carrierMap[name].lastDate=s.date;
+          }
+          const carriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
+          if (histCountEl) histCountEl.textContent=carriers.length+' carriers';
+
+          histRowsEl.innerHTML=`
+            <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+              <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+              <div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
+              <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>
+              <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>
+            </div>
+            ${carriers.map(([name,d])=>`
+              <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
+                <div style="flex:1;padding:10px 16px;font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+                <div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads} loads</div>
+                <div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads>0?'$'+(d.totalPay/d.loads).toFixed(0)+'/load':'—'}</div>
+                <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">${d.lastDate||'—'}</div>
+              </div>`).join('')}`;
+        }
+      }
     }
     const rateEl = document.getElementById('ls_rate_content');
     if (rateEl) {
@@ -2369,6 +2319,35 @@
   }
 
 
+
+  // ── BOARD CITY SEARCH ──
+  async function runBoardSearch() {
+    const cityInput = document.getElementById('boardCityInput');
+    const cityVal = cityInput ? cityInput.value.trim() : '';
+    if (!cityVal) { renderBoard(null); return; }
+
+    // Try cache first
+    const parts = cityVal.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+    const city  = parts ? parts[1].trim() : cityVal;
+    const state = parts ? parts[2].trim().toUpperCase() : '';
+    let coords = getCityCoords(city, state);
+    if (!coords) coords = await geocode(cityVal);
+    if (!coords) { showToast('"'+cityVal+'" not found — check city and state'); renderBoard(null); return; }
+
+    // Geocode all truck locations
+    const trucks = loadTrucks();
+    const uniqueLocs = [...new Set(trucks.map(t => t.city+', '+t.state))];
+    await Promise.allSettled(uniqueLocs.map(async loc => {
+      const p = loc.split(', ');
+      if (!getCityCoords(p[0], p[1]||'')) {
+        const c = await geocode(loc);
+        if (c) GEO_CACHE[loc.toLowerCase()] = c;
+      }
+    }));
+
+    renderBoard(coords);
+  }
+
   // Hook up nav links
   function initNav() {
     const links = document.querySelectorAll('.nav-link');
@@ -2400,6 +2379,21 @@
     // History file input
     const histFile = document.getElementById('historyFileInputEl') || document.getElementById('historyFileInput');
     if (histFile) histFile.addEventListener('change', e => handleHistoryFile(e.target.files[0]));
+
+    // Board carrier name search
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.addEventListener('input', () => renderBoard(null));
+
+    // Board city search
+    const boardCity   = document.getElementById('boardCityInput');
+    const boardRadius = document.getElementById('boardRadiusFilter');
+    const equipFilter = document.getElementById('equipFilter');
+    const statusFilter= document.getElementById('statusFilter');
+    if (boardCity)   boardCity.addEventListener('keydown',   e => { if(e.key==='Enter') runBoardSearch(); });
+    if (boardCity)   boardCity.addEventListener('input',     () => { if(!boardCity.value.trim()) renderBoard(null); });
+    if (boardRadius) boardRadius.addEventListener('change',  () => { if(boardCity&&boardCity.value.trim()) runBoardSearch(); else renderBoard(null); });
+    if (equipFilter) equipFilter.addEventListener('change',  () => renderBoard(null));
+    if (statusFilter)statusFilter.addEventListener('change', () => renderBoard(null));
 
     // Rate intel search
     const riBtn    = document.getElementById('ri_search_btn');
