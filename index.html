@@ -1426,12 +1426,17 @@
           + '</div>';
         histRowsEl.innerHTML = noHistHtml;
       } else {
-        // Filter history matching this search — use radius if we have coords
+        // Filter history matching this search — use radius when coords available
         const originLower = origin.toLowerCase();
         const destLower   = dest.toLowerCase();
         const originCity  = origin.split(',')[0].trim();
-        const searchCoords = getCityCoords(originCity, (origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'') || GEO_CACHE[origin.toLowerCase()];
-        const searchRadius = radEl ? parseInt(radEl.value) : 150;
+        const originState = ((origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'').toUpperCase();
+        // Use radius passed to function (not radEl which isn't in scope)
+        const searchRadius = radius || 150;
+        // Get search coords — try built-in table first, then cache
+        const searchCoords = getCityCoords(originCity, originState)
+          || GEO_CACHE[(originCity+' '+originState).toLowerCase()]
+          || GEO_CACHE[originCity.toLowerCase()];
 
         const matches = history.filter(s => {
           const o = (s.origin||'').toLowerCase();
@@ -1439,19 +1444,23 @@
           const destMatch = !dest || d.includes(destLower.split(',')[0].trim().toLowerCase());
           if (!destMatch) return false;
 
-          // Try radius match first if we have coords
-          if (searchCoords && searchRadius !== 9999) {
+          // Try radius match if we have coords for search origin
+          if (searchCoords) {
             const oParts = (s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
             if (oParts) {
-              const oCoords = getCityCoords(oParts[1].trim(), oParts[2].trim()) || GEO_CACHE[(oParts[1].trim()+' '+oParts[2].trim()).toLowerCase()];
+              const oCity  = oParts[1].trim();
+              const oState = oParts[2].trim().toUpperCase();
+              const oCoords = getCityCoords(oCity, oState)
+                || GEO_CACHE[(oCity+' '+oState).toLowerCase()];
               if (oCoords) {
                 const dist = haversine(searchCoords[0], searchCoords[1], oCoords[0], oCoords[1]);
-                return dist <= searchRadius;
+                // Use radius if specified, otherwise show all with coords
+                return searchRadius === 9999 || dist <= searchRadius;
               }
             }
           }
-          // Fallback to text match
-          return o.includes(originLower.split(',')[0].trim().toLowerCase());
+          // Fallback to text match — check city name appears in origin
+          return o.includes(originCity.toLowerCase());
         });
 
         if (!matches.length) {
