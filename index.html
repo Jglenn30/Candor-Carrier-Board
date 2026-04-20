@@ -481,6 +481,46 @@
   function group(p) { const h=(Date.now()-p)/3600000; return h<12?'fresh':h<48?'aging':'stale'; }
 
   // ── RENDER BOARD ──
+
+  function buildInboundHtml(inboundFiltered) {
+    if (!inboundFiltered.length) return '';
+    return `<div class="section-divider section-gap">
+        <div class="divider-label"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue);display:inline-block;margin-right:3px;"></span>Inbound trucks — delivering to destination</div>
+        <div class="divider-line"></div>
+        <div class="divider-count">${inboundFiltered.length}</div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-row table-head">
+          <div class="th-dot"></div>
+          <div class="th th-carrier">Carrier</div>
+          <div class="th th-equip">Equipment</div>
+          <div class="th th-location">Delivering to</div>
+          <div class="th th-posted">Available</div>
+          <div class="th th-status">Status</div>
+          <div class="th th-claimed">Delivery date</div>
+          <div class="th th-actions">Origin / Action</div>
+        </div>
+        ${inboundFiltered.map(t=>`
+        <div class="truck-row-wrap">
+          <div class="table-row">
+            <div class="td-dot"><span class="dot" style="background:var(--blue);"></span></div>
+            <div class="td td-carrier">
+              <div class="carrier-name" onclick="openCarrierProfile('${t.carrier}','—','—')" style="cursor:pointer;">${t.carrier}</div>
+              <div class="carrier-detail">Off your load</div>
+            </div>
+            <div class="td td-equip">${t.equip}</div>
+            <div class="td td-location">${t.city}, ${t.state}</div>
+            <div class="td td-posted">
+              <span style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;background:${inboundDayBg(t.daysOut)};color:${inboundDayColor(t.daysOut)};">${inboundDayLabel(t.daysOut)}</span>
+            </div>
+            <div class="td td-status"><span class="badge" style="background:var(--blue-light);color:var(--blue-dark);">Inbound</span></div>
+            <div class="td td-claimed"><div style="font-size:11px;color:var(--gray-400);">${t.delivDate}</div></div>
+            <div class="td td-actions"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:12px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;">${t.origin||'—'}</span><button onclick="markInboundDelivered('${t.inboundKey}')" style="font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--gray-200);background:#fff;color:var(--gray-600);cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;">Delivered</button></div></div>
+          </div>
+        </div>`).join('')}
+      </div>`;
+  }
+
   function renderBoard() {
     const trucks = loadTrucks();
     const searchVal = document.getElementById('searchInput').value.toLowerCase();
@@ -511,11 +551,23 @@
       stale: { label:'Stale — 48hrs+', dot:'dot-red' }
     };
 
-    let html = '';
-    let first = true;
+    // Get inbound trucks first so we can insert after fresh
+    const inbound = getInboundTrucks();
+    const inboundFiltered = inbound.filter(t => {
+      if (equipVal && !t.equip.toLowerCase().includes(equipVal)) return false;
+      if (stateVal && t.state !== stateVal) return false;
+      if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
+      if (searchVal && !t.carrier.toLowerCase().includes(searchVal) && !t.city.toLowerCase().includes(searchVal)) return false;
+      return true;
+    });
+
+    // Build final HTML — inbound goes after fresh, before aging
+    let finalHtml = '';
+    let insertedInbound = false;
+
     for (const [key, m] of Object.entries(meta)) {
       if (!groups[key].length) continue;
-      html += `<div class="section-divider${first?'':' section-gap'}">
+      finalHtml += `<div class="section-divider${finalHtml===''?'':' section-gap'}">
         <div class="divider-label"><span class="dot ${m.dot}" style="width:7px;height:7px;"></span>${m.label}</div>
         <div class="divider-line"></div>
         <div class="divider-count">${groups[key].length}</div>
@@ -530,87 +582,48 @@
           <div class="th th-status">Status</div>
           <div class="th th-claimed">Claimed by</div>
           <div class="th th-actions">Notes / Actions</div>
-        </div>`;
-      groups[key].forEach(t => {
-        const isMine = t.claimedBy === currentUser;
-        const claimed = t.claimedBy !== '';
-        const claimHtml = claimed
-          ? `<span class="claimed-by">${t.claimedBy}</span>${isMine?`<button class="action-btn unclaim" onclick="unclaim(${t.id})">Unclaim</button>`:''}`
-          : `<button class="action-btn claim" onclick="claim(${t.id})">Claim</button>`;
-        const noteHtml = t.notes
-          ? `<span class="notes-trigger" onclick="openNotes(${t.id})" title="${t.notes}">${t.notes}</span>`
-          : `<span class="notes-trigger" onclick="openNotes(${t.id})" style="color:var(--gray-300);">+ add note</span>`;
-        html += `<div class="truck-row-wrap${key==='stale'?' stale':''}">
-          <div class="table-row">
-            <div class="td-dot"><span class="dot ${dotClass(t.posted)}"></span></div>
-            <div class="td td-carrier"><div class="carrier-name">${t.carrier}</div><div class="carrier-mc">${t.mc} · <span class="cell-phone">${t.phone}</span></div></div>
-            <div class="td td-equip">${t.equip}</div>
-            <div class="td td-location">${t.city}, ${t.state}</div>
-            <div class="td td-posted"><span class="${ageClass(t.posted)}">${ageLabel(t.posted)}</span></div>
-            <div class="td td-status"><span class="badge ${t.status==='Available'?'badge-avail':'badge-contact'}">${t.status}</span></div>
-            <div class="td td-claimed"><div class="row-actions">${claimHtml}</div></div>
-            <div class="td td-actions"><div class="row-actions">${noteHtml}<button class="action-btn cover" onclick="markCovered(${t.id})">Covered</button></div></div>
-          </div>
-        </div>`;
-      });
-      html += `</div>`;
-      first = false;
-    }
-    if (!filtered.length && !chipFilter) {
-      html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
-    } else if (!filtered.length) {
-      html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
-    }
-
-    // Add inbound trucks section
-    const inbound = getInboundTrucks();
-    const inboundFiltered = inbound.filter(t => {
-      if (equipVal && !t.equip.toLowerCase().includes(equipVal)) return false;
-      if (stateVal && t.state !== stateVal) return false;
-      if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
-      if (searchVal && !t.carrier.toLowerCase().includes(searchVal) && !t.city.toLowerCase().includes(searchVal)) return false;
-      return true;
-    });
-
-    if (inboundFiltered.length) {
-      html += `<div class="section-divider section-gap">
-        <div class="divider-label"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue);display:inline-block;margin-right:3px;"></span>Inbound trucks — delivering to destination</div>
-        <div class="divider-line"></div>
-        <div class="divider-count">${inboundFiltered.length}</div>
-      </div>
-      <div class="table-wrap">
-        <div class="table-row table-head">
-          <div class="th-dot"></div>
-          <div class="th th-carrier">Carrier</div>
-          <div class="th th-equip">Equipment</div>
-          <div class="th th-location">Delivering to</div>
-          <div class="th th-posted">Available</div>
-          <div class="th th-status">Status</div>
-          <div class="th th-claimed">From</div>
-          <div class="th th-actions">Origin</div>
         </div>
-        ${inboundFiltered.map(t=>`
-        <div class="truck-row-wrap">
-          <div class="table-row">
-            <div class="td-dot"><span class="dot" style="background:var(--blue);"></span></div>
-            <div class="td td-carrier">
-              <div class="carrier-name" onclick="openCarrierProfile('${t.carrier}','—','—')" style="cursor:pointer;">${t.carrier}</div>
-              <div class="carrier-detail">Off your load</div>
+        ${groups[key].map(t => {
+          const isMine = t.claimedBy === currentUser;
+          const claimed = t.claimedBy !== '';
+          const claimHtml = claimed
+            ? `<span class="claimed-by">${t.claimedBy}</span>${isMine?`<button class="action-btn unclaim" onclick="unclaim(${t.id})">Unclaim</button>`:''}`
+            : `<button class="action-btn claim" onclick="claim(${t.id})">Claim</button>`;
+          const noteHtml = t.notes
+            ? `<span class="notes-trigger" onclick="openNotes(${t.id})" title="${t.notes}">${t.notes}</span>`
+            : `<span class="notes-trigger" onclick="openNotes(${t.id})" style="color:var(--gray-300);">+ add note</span>`;
+          return `<div class="truck-row-wrap${key==='stale'?' stale':''}">
+            <div class="table-row">
+              <div class="td-dot"><span class="dot ${dotClass(t.posted)}"></span></div>
+              <div class="td td-carrier"><div class="carrier-name" onclick="openCarrierProfile('${t.carrier}','${t.mc}','${t.phone}')" style="cursor:pointer;">${t.carrier}</div><div class="carrier-mc">${t.mc} · <span class="cell-phone">${t.phone}</span></div></div>
+              <div class="td td-equip">${t.equip}</div>
+              <div class="td td-location">${t.city}, ${t.state}</div>
+              <div class="td td-posted"><span class="${ageClass(t.posted)}">${ageLabel(t.posted)}</span></div>
+              <div class="td td-status"><span class="badge ${t.status==='Available'?'badge-avail':'badge-contact'}">${t.status}</span></div>
+              <div class="td td-claimed"><div class="row-actions">${claimHtml}</div></div>
+              <div class="td td-actions"><div class="row-actions">${noteHtml}<button class="action-btn cover" onclick="markCovered(${t.id})">Covered</button></div></div>
             </div>
-            <div class="td td-equip">${t.equip}</div>
-            <div class="td td-location">${t.city}, ${t.state}</div>
-            <div class="td td-posted">
-              <span style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;background:${inboundDayBg(t.daysOut)};color:${inboundDayColor(t.daysOut)};">${inboundDayLabel(t.daysOut)}</span>
-            </div>
-            <div class="td td-status"><span class="badge" style="background:var(--blue-light);color:var(--blue-dark);">Inbound</span></div>
-            <div class="td td-claimed"><div style="font-size:11px;color:var(--gray-400);">${t.delivDate}</div></div>
-            <div class="td td-actions"><div style="font-size:12px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.origin}</div></div>
-          </div>
-        </div>`).join('')}
+          </div>`;
+        }).join('')}
       </div>`;
+
+      // Insert inbound right after fresh section
+      if (key === 'fresh' && inboundFiltered.length && !insertedInbound) {
+        finalHtml += buildInboundHtml(inboundFiltered);
+        insertedInbound = true;
+      }
     }
 
-    document.getElementById('boardArea').innerHTML = html;
+    // If no fresh trucks, add inbound at top
+    if (!insertedInbound && inboundFiltered.length) {
+      finalHtml = buildInboundHtml(inboundFiltered) + finalHtml;
+    }
+
+    if (!filtered.length && !inboundFiltered.length) {
+      finalHtml = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+    }
+
+    document.getElementById('boardArea').innerHTML = finalHtml;
   }
 
   // ── ACTIONS ──
@@ -2106,12 +2119,21 @@
           if (progressBar) progressBar.style.width = '80%';
           if (progressTxt) progressTxt.textContent = 'Saving '+shipments.length+' shipments...';
           setTimeout(() => {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(shipments));
+            // APPEND mode — merge with existing, deduplicate by Shipment ID
+            const existing = getHistory();
+            const existingIds = new Set(existing.map(s => s.id).filter(Boolean));
+            const newShipments = shipments.filter(s => !s.id || !existingIds.has(s.id));
+            const merged = [...existing, ...newShipments];
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(merged));
             localStorage.setItem('candor_history_date', new Date().toLocaleDateString());
             if (progressBar) progressBar.style.width = '100%';
-            if (progressTxt) progressTxt.textContent = '✓ '+shipments.length.toLocaleString()+' shipments loaded successfully';
+            const addedCount = newShipments.length;
+            const totalCount = merged.length;
+            if (progressTxt) progressTxt.textContent = '✓ Added '+addedCount.toLocaleString()+' new shipments ('+totalCount.toLocaleString()+' total)';
             updateHistoryStats();
-            showToast(shipments.length.toLocaleString()+' shipments loaded', 'green');
+            // Also process inbound trucks from this upload
+            processInboundFromUpload(shipments);
+            showToast('Added '+addedCount.toLocaleString()+' new shipments', 'green');
             setTimeout(() => { if (progress) progress.style.display='none'; }, 3000);
           }, 200);
         } catch(err) {
@@ -2186,7 +2208,8 @@
 
       const equip = colMap.equip !== undefined ? (cols[colMap.equip]||'').trim() : '';
 
-      shipments.push({ carrier, origin, dest, date, delivDate, carrierCost, custCost, equip,
+      const shipmentId = colMap.id !== undefined ? (cols[colMap.id]||'').trim() : '';
+      shipments.push({ id: shipmentId, carrier, origin, dest, date, delivDate, carrierCost, custCost, equip,
         netRevenue: custCost - carrierCost,
         margin: custCost > 0 ? ((custCost-carrierCost)/custCost*100) : 0
       });
@@ -2240,59 +2263,91 @@
 
 
 
-  // ── INBOUND TRUCKS (from shipment history delivery dates) ──
-  function getInboundTrucks() {
-    const history = getHistory();
-    if (!history.length) return [];
 
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const inbound = [];
+  // ── INBOUND TRUCK STORAGE ──
+  const INBOUND_KEY = 'candor_inbound_v1';
 
-    for (const s of history) {
-      if (!s.delivDate || s.delivDate === '' || s.delivDate === '-') continue;
+  function loadInboundStore() {
+    try { return JSON.parse(localStorage.getItem(INBOUND_KEY)||'[]'); }
+    catch(e) { return []; }
+  }
+  function saveInboundStore(arr) { localStorage.setItem(INBOUND_KEY, JSON.stringify(arr)); }
 
-      // Parse delivery date MM/DD/YYYY
+  function processInboundFromUpload(shipments) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const existing = loadInboundStore();
+    const existingKeys = new Set(existing.map(t => t.inboundKey));
+    let added = 0;
+
+    for (const s of shipments) {
+      if (!s.delivDate || s.delivDate==='-' || s.delivDate==='') continue;
       const parts = s.delivDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
       if (!parts) continue;
       const delivDay = new Date(parseInt(parts[3]), parseInt(parts[1])-1, parseInt(parts[2]));
       delivDay.setHours(0,0,0,0);
+      if (delivDay < today) continue; // skip past deliveries
 
-      // Skip already delivered (before today)
-      if (delivDay < today) continue;
-
-      // Parse destination city/state
       const destParts = (s.dest||'').match(/([^,]+),\s*([A-Z]{2})/);
-      const city  = destParts ? destParts[1].trim() : s.dest||'';
+      const city  = destParts ? destParts[1].trim() : (s.dest||'');
       const state = destParts ? destParts[2].trim() : '';
 
-      // Days until delivery
-      const daysOut = Math.round((delivDay - today) / 86400000);
+      const key = s.carrier+'|'+s.delivDate+'|'+city;
+      if (existingKeys.has(key)) continue;
+      existingKeys.add(key);
 
-      inbound.push({
-        id: 'inbound_'+s.carrier+'_'+s.delivDate,
-        carrier: s.carrier,
-        mc: '—', phone: '—',
-        city, state,
-        equip: s.equip||'—',
-        delivDate: s.delivDate,
-        delivDay,
-        daysOut,
+      existing.push({
+        inboundKey: key,
+        carrier: s.carrier, mc:'—', phone:'—',
+        city, state, equip: s.equip||'—',
+        delivDate: s.delivDate, delivDay: delivDay.toISOString(),
         origin: s.origin,
-        status: 'Inbound',
-        claimedBy: '', notes: '',
+        claimedBy:'', notes:'',
         posted: Date.now(),
-        isInbound: true
+        isInbound: true,
+        delivered: false
       });
+      added++;
     }
 
-    // Deduplicate by carrier+delivDate+city
-    const seen = new Set();
-    return inbound.filter(t => {
-      const key = t.carrier+'|'+t.delivDate+'|'+t.city;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    }).sort((a,b) => a.delivDay - b.delivDay);
+    saveInboundStore(existing);
+    if (added > 0) showToast(added+' inbound truck'+(added!==1?'s':'')+' added to board', 'green');
+    renderBoard();
+  }
+
+  function markInboundDelivered(key) {
+    const store = loadInboundStore();
+    const idx = store.findIndex(t => t.inboundKey === key);
+    if (idx > -1) { store.splice(idx, 1); saveInboundStore(store); }
+    renderBoard();
+    showToast('Marked as delivered and removed');
+  }
+
+  function cleanStaleInbound() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const store = loadInboundStore();
+    const fresh = store.filter(t => {
+      if (!t.delivDay) return false;
+      const d = new Date(t.delivDay); d.setHours(0,0,0,0);
+      return d >= today;
+    });
+    if (fresh.length !== store.length) {
+      saveInboundStore(fresh);
+    }
+    return fresh;
+  }
+
+
+
+  // ── INBOUND TRUCKS — from persistent storage ──
+  function getInboundTrucks() {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const store = cleanStaleInbound();
+    return store.map(t => {
+      const delivDay = new Date(t.delivDay);
+      delivDay.setHours(0,0,0,0);
+      const daysOut = Math.round((delivDay - today) / 86400000);
+      return {...t, delivDay, daysOut};
+    }).sort((a,b) => a.daysOut - b.daysOut);
   }
 
   function inboundDayLabel(daysOut) {
