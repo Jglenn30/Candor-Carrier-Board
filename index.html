@@ -483,10 +483,11 @@
   // ── RENDER BOARD ──
   function renderBoard() {
     const trucks = loadTrucks();
-    const search = document.getElementById('searchInput').value.toLowerCase();
-    const equip  = document.getElementById('equipFilter').value.toLowerCase();
-    const state  = document.getElementById('stateFilter').value;
-    const status = document.getElementById('statusFilter').value;
+    const searchVal = document.getElementById('searchInput').value.toLowerCase();
+    const equipVal  = document.getElementById('equipFilter').value.toLowerCase();
+    const stateVal  = document.getElementById('stateFilter').value;
+    const statusVal = document.getElementById('statusFilter').value;
+    const search = searchVal; const equip = equipVal; const state = stateVal; const status = statusVal;
 
     const filtered = trucks.filter(t => {
       if (search && !t.carrier.toLowerCase().includes(search) && !t.city.toLowerCase().includes(search)) return false;
@@ -555,7 +556,60 @@
       html += `</div>`;
       first = false;
     }
-    if (!filtered.length) html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+    if (!filtered.length && !chipFilter) {
+      html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+    } else if (!filtered.length) {
+      html = `<div class="table-wrap"><div class="empty-state">No trucks match your filters.</div></div>`;
+    }
+
+    // Add inbound trucks section
+    const inbound = getInboundTrucks();
+    const inboundFiltered = inbound.filter(t => {
+      if (equipVal && !t.equip.toLowerCase().includes(equipVal)) return false;
+      if (stateVal && t.state !== stateVal) return false;
+      if (chipFilter && chipFilter !== 'stale' && !t.equip.toLowerCase().includes(chipFilter)) return false;
+      if (searchVal && !t.carrier.toLowerCase().includes(searchVal) && !t.city.toLowerCase().includes(searchVal)) return false;
+      return true;
+    });
+
+    if (inboundFiltered.length) {
+      html += `<div class="section-divider section-gap">
+        <div class="divider-label"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue);display:inline-block;margin-right:3px;"></span>Inbound trucks — delivering to destination</div>
+        <div class="divider-line"></div>
+        <div class="divider-count">${inboundFiltered.length}</div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-row table-head">
+          <div class="th-dot"></div>
+          <div class="th th-carrier">Carrier</div>
+          <div class="th th-equip">Equipment</div>
+          <div class="th th-location">Delivering to</div>
+          <div class="th th-posted">Available</div>
+          <div class="th th-status">Status</div>
+          <div class="th th-claimed">From</div>
+          <div class="th th-actions">Origin</div>
+        </div>
+        ${inboundFiltered.map(t=>`
+        <div class="truck-row-wrap">
+          <div class="table-row">
+            <div class="td-dot"><span class="dot" style="background:var(--blue);"></span></div>
+            <div class="td td-carrier">
+              <div class="carrier-name" onclick="openCarrierProfile('${t.carrier}','—','—')" style="cursor:pointer;">${t.carrier}</div>
+              <div class="carrier-detail">Off your load</div>
+            </div>
+            <div class="td td-equip">${t.equip}</div>
+            <div class="td td-location">${t.city}, ${t.state}</div>
+            <div class="td td-posted">
+              <span style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:20px;background:${inboundDayBg(t.daysOut)};color:${inboundDayColor(t.daysOut)};">${inboundDayLabel(t.daysOut)}</span>
+            </div>
+            <div class="td td-status"><span class="badge" style="background:var(--blue-light);color:var(--blue-dark);">Inbound</span></div>
+            <div class="td td-claimed"><div style="font-size:11px;color:var(--gray-400);">${t.delivDate}</div></div>
+            <div class="td td-actions"><div style="font-size:12px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.origin}</div></div>
+          </div>
+        </div>`).join('')}
+      </div>`;
+    }
+
     document.getElementById('boardArea').innerHTML = html;
   }
 
@@ -1318,10 +1372,30 @@
     }
 
     results.sort((a,b) => (a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
-    renderLaneResults(results, originRaw, destRaw, radius);
+
+    // Also find inbound trucks delivering near this origin
+    const inbound = getInboundTrucks();
+    const inboundResults = [];
+    for (const t of inbound) {
+      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
+      let distance = null;
+      let include = false;
+      if (originCoords) {
+        const tc = getCityCoords(t.city, t.state);
+        if (tc) {
+          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
+          include = (radius === 9999 || distance <= radius);
+        } else { include = !originSt || t.state === originSt; }
+      } else { include = !originSt || t.state === originSt; }
+      if (include) inboundResults.push({...t, distance});
+    }
+    inboundResults.sort((a,b)=>a.daysOut-b.daysOut);
+
+    renderLaneResults(results, originRaw, destRaw, radius, inboundResults);
   }
 
-  function renderLaneResults(trucks, origin, dest, radius) {
+  function renderLaneResults(trucks, origin, dest, radius, inboundTrucks) {
+    inboundTrucks = inboundTrucks || [];
     const emptyEl = document.getElementById('ls_empty');
     const gridEl  = document.getElementById('ls_grid');
     if (emptyEl) emptyEl.style.display='none';
@@ -1362,6 +1436,36 @@
             <div style="width:90px;padding:11px 12px;flex-shrink:0;"><span style="font-size:12px;font-family:'DM Mono',monospace;color:${aClr(t)};">${aLbl(t)}</span></div>
             <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:${t.status==='Available'?'var(--green-light)':'var(--amber-light)'};color:${t.status==='Available'?'var(--green-dark)':'var(--amber-dark)'};">${t.status}</span></div>
           </div>`).join('');
+      }
+    }
+
+    // Inbound trucks in lane search
+    const lsInboundEl = document.getElementById('ls_inbound_section');
+    if (lsInboundEl) {
+      if (inboundTrucks.length) {
+        lsInboundEl.style.display = '';
+        const inboundCount = document.getElementById('ls_inbound_count');
+        if (inboundCount) inboundCount.textContent = inboundTrucks.length+' trucks';
+        const inboundRows = document.getElementById('ls_inbound_rows');
+        if (inboundRows) {
+          inboundRows.innerHTML = inboundTrucks.map(t=>`
+            <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
+              <div style="width:14px;padding:12px 6px 12px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span></div>
+              <div style="flex:1;padding:11px 12px;overflow:hidden;">
+                <div style="font-size:13px;font-weight:500;color:var(--black);">${t.carrier}</div>
+                <div style="font-size:11px;color:var(--gray-400);">Off your load · from ${t.origin}</div>
+              </div>
+              <div style="width:130px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
+              <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.city}, ${t.state}</div>
+              <div style="width:90px;padding:11px 12px;flex-shrink:0;">${t.distance!=null?t.distance+' mi':'—'}</div>
+              <div style="width:90px;padding:11px 12px;flex-shrink:0;">
+                <span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:${inboundDayBg(t.daysOut)};color:${inboundDayColor(t.daysOut)};">${inboundDayLabel(t.daysOut)}</span>
+              </div>
+              <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">Inbound</span></div>
+            </div>`).join('');
+        }
+      } else {
+        lsInboundEl.style.display = 'none';
       }
     }
 
@@ -2039,7 +2143,9 @@
       else if (lower === 'carrier' || (lower.includes('carrier') && !lower.includes('cost') && !lower.includes('code'))) colMap.carrier = i;
       else if (lower.includes('origin')) colMap.origin = i;
       else if (lower.includes('destination') || lower === 'dest') colMap.dest = i;
-      else if (lower.includes('pickup') || lower === 'actual pickup date' || (lower.includes('date') && !lower.includes('id'))) colMap.date = i;
+      else if (lower === 'actual pickup date' || (lower.includes('pickup') && lower.includes('date'))) colMap.date = i;
+      else if (lower === 'actual delivery date' || (lower.includes('delivery') && lower.includes('date'))) colMap.deliveryDate = i;
+      else if (lower.includes('date') && !lower.includes('id') && colMap.date === undefined) colMap.date = i;
       else if (lower.includes('equipment')) colMap.equip = i;
       else if (lower.includes('shipment') && lower.includes('id')) colMap.id = i;
       else if (lower.includes('margin') && lower.includes('%')) colMap.marginPct = i;
@@ -2073,12 +2179,14 @@
       const custCost    = (rawRC==='-'||rawRC==='')?0:parseFloat(rawRC.replace(/[^0-9.-]/g,''))||0;
 
       // Date - extract just the date part
-      const dateRaw = colMap.date !== undefined ? (cols[colMap.date]||'').trim() : '';
-      const date = dateRaw.split(' ')[0] || dateRaw;
+      const dateRaw     = colMap.date !== undefined         ? (cols[colMap.date]||'').trim()         : '';
+      const delivRaw    = colMap.deliveryDate !== undefined ? (cols[colMap.deliveryDate]||'').trim()  : '';
+      const date        = dateRaw.split(' ')[0]  || dateRaw;
+      const delivDate   = delivRaw.split(' ')[0] || delivRaw;
 
       const equip = colMap.equip !== undefined ? (cols[colMap.equip]||'').trim() : '';
 
-      shipments.push({ carrier, origin, dest, date, carrierCost, custCost, equip,
+      shipments.push({ carrier, origin, dest, date, delivDate, carrierCost, custCost, equip,
         netRevenue: custCost - carrierCost,
         margin: custCost > 0 ? ((custCost-carrierCost)/custCost*100) : 0
       });
@@ -2128,6 +2236,81 @@
     localStorage.removeItem('candor_history_date');
     updateHistoryStats();
     showToast('History cleared');
+  }
+
+
+
+  // ── INBOUND TRUCKS (from shipment history delivery dates) ──
+  function getInboundTrucks() {
+    const history = getHistory();
+    if (!history.length) return [];
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const inbound = [];
+
+    for (const s of history) {
+      if (!s.delivDate || s.delivDate === '' || s.delivDate === '-') continue;
+
+      // Parse delivery date MM/DD/YYYY
+      const parts = s.delivDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (!parts) continue;
+      const delivDay = new Date(parseInt(parts[3]), parseInt(parts[1])-1, parseInt(parts[2]));
+      delivDay.setHours(0,0,0,0);
+
+      // Skip already delivered (before today)
+      if (delivDay < today) continue;
+
+      // Parse destination city/state
+      const destParts = (s.dest||'').match(/([^,]+),\s*([A-Z]{2})/);
+      const city  = destParts ? destParts[1].trim() : s.dest||'';
+      const state = destParts ? destParts[2].trim() : '';
+
+      // Days until delivery
+      const daysOut = Math.round((delivDay - today) / 86400000);
+
+      inbound.push({
+        id: 'inbound_'+s.carrier+'_'+s.delivDate,
+        carrier: s.carrier,
+        mc: '—', phone: '—',
+        city, state,
+        equip: s.equip||'—',
+        delivDate: s.delivDate,
+        delivDay,
+        daysOut,
+        origin: s.origin,
+        status: 'Inbound',
+        claimedBy: '', notes: '',
+        posted: Date.now(),
+        isInbound: true
+      });
+    }
+
+    // Deduplicate by carrier+delivDate+city
+    const seen = new Set();
+    return inbound.filter(t => {
+      const key = t.carrier+'|'+t.delivDate+'|'+t.city;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    }).sort((a,b) => a.delivDay - b.delivDay);
+  }
+
+  function inboundDayLabel(daysOut) {
+    if (daysOut === 0) return 'Today';
+    if (daysOut === 1) return 'Tomorrow';
+    return 'In '+daysOut+' days';
+  }
+
+  function inboundDayColor(daysOut) {
+    if (daysOut === 0) return 'var(--green-dark)';
+    if (daysOut === 1) return 'var(--amber-dark)';
+    return 'var(--gray-600)';
+  }
+
+  function inboundDayBg(daysOut) {
+    if (daysOut === 0) return 'var(--green-light)';
+    if (daysOut === 1) return 'var(--amber-light)';
+    return 'var(--gray-100)';
   }
 
 
@@ -2443,6 +2626,27 @@ Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100
           <div id="ls_truck_rows">
             <div style="padding:24px;text-align:center;font-size:13px;color:var(--gray-400);">Search to see available trucks</div>
           </div>
+        </div>
+
+        <!-- INBOUND TRUCKS -->
+        <div id="ls_inbound_section" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span>
+              Inbound trucks — off your loads
+              <span id="ls_inbound_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+            </div>
+          </div>
+          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+            <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
+            <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+            <div style="width:130px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+            <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Delivering to</div>
+            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>
+            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Available</div>
+            <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Type</div>
+          </div>
+          <div id="ls_inbound_rows"></div>
         </div>
 
         <!-- CARRIER HISTORY -->
