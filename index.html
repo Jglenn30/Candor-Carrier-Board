@@ -760,6 +760,8 @@
       renderBoard();
     }
     setInterval(renderBoard, 60000);
+    // Pre-cache history origins in background for fast lane search
+    setTimeout(preCacheHistoryOrigins, 2000);
   }
   // init called via DOMContentLoaded below
 
@@ -1417,23 +1419,39 @@
     if (histRowsEl) {
       const history = getHistory();
       if (!history.length) {
-        histRowsEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
-          <div style="font-size:20px;flex-shrink:0;">📂</div>
-          <div>
-            <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div>
-            <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to unlock carrier lane history.</div>
-            <div style="margin-top:8px;"><span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>
-          </div></div>`;
+        const noHistHtml = '<div style="padding:20px 16px;">'
+          + '<div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div>'
+          + '<div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to unlock carrier lane history.</div>'
+          + '<div style="margin-top:8px;"><span onclick="showPage(\"admin\")" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>'
+          + '</div>';
+        histRowsEl.innerHTML = noHistHtml;
       } else {
-        // Filter history matching this search
+        // Filter history matching this search — use radius if we have coords
         const originLower = origin.toLowerCase();
         const destLower   = dest.toLowerCase();
+        const originCity  = origin.split(',')[0].trim();
+        const searchCoords = getCityCoords(originCity, (origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'') || GEO_CACHE[origin.toLowerCase()];
+        const searchRadius = radEl ? parseInt(radEl.value) : 150;
+
         const matches = history.filter(s => {
           const o = (s.origin||'').toLowerCase();
           const d = (s.dest||'').toLowerCase();
-          const originMatch = o.includes(originLower.split(',')[0].trim());
-          const destMatch   = !dest || d.includes(destLower.split(',')[0].trim());
-          return originMatch && destMatch;
+          const destMatch = !dest || d.includes(destLower.split(',')[0].trim().toLowerCase());
+          if (!destMatch) return false;
+
+          // Try radius match first if we have coords
+          if (searchCoords && searchRadius !== 9999) {
+            const oParts = (s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
+            if (oParts) {
+              const oCoords = getCityCoords(oParts[1].trim(), oParts[2].trim()) || GEO_CACHE[(oParts[1].trim()+' '+oParts[2].trim()).toLowerCase()];
+              if (oCoords) {
+                const dist = haversine(searchCoords[0], searchCoords[1], oCoords[0], oCoords[1]);
+                return dist <= searchRadius;
+              }
+            }
+          }
+          // Fallback to text match
+          return o.includes(originLower.split(',')[0].trim().toLowerCase());
         });
 
         if (!matches.length) {
@@ -2099,6 +2117,8 @@
             const totalCount = merged.length;
             if (progressTxt) progressTxt.textContent = '✓ Added '+addedCount.toLocaleString()+' new shipments ('+totalCount.toLocaleString()+' total)';
             updateHistoryStats();
+            // Pre-cache new origins in background
+            setTimeout(preCacheHistoryOrigins, 500);
             // Also process inbound trucks from this upload
             processInboundFromUpload(shipments);
             showToast('Added '+addedCount.toLocaleString()+' new shipments', 'green');
@@ -2364,6 +2384,41 @@
     }));
 
     renderBoard(coords);
+  }
+
+
+  // ── PRE-GEOCODE common history origins in background ──
+  async function preCacheHistoryOrigins() {
+    const history = getHistory();
+    if (!history.length) return;
+
+    // Get unique origins that aren't already cached
+    const origins = [...new Set(history.map(s => s.origin).filter(Boolean))].filter(origin => {
+      const parts = origin.match(/([^,]+),\s*([A-Z]{2})/i);
+      if (!parts) return false;
+      const city  = parts[1].trim();
+      const state = parts[2].trim().toUpperCase();
+      const key   = (city + ' ' + state).toLowerCase();
+      return !GEO_CACHE[key] && !getCityCoords(city, state);
+    });
+
+    if (!origins.length) return;
+
+    // One request per second — respects Nominatim rate limit
+    let cached = 0;
+    for (const origin of origins) {
+      const parts = origin.match(/([^,]+),\s*([A-Z]{2})/i);
+      if (!parts) continue;
+      const city  = parts[1].trim();
+      const state = parts[2].trim().toUpperCase();
+      const key   = (city + ' ' + state).toLowerCase();
+      try {
+        const coords = await geocode(city + ', ' + state);
+        if (coords) { GEO_CACHE[key] = coords; cached++; }
+      } catch(e) {}
+      // 1.1 second delay between requests — Nominatim allows 1/sec
+      await new Promise(r => setTimeout(r, 1100));
+    }
   }
 
   // Hook up nav links
