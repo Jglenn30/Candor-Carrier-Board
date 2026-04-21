@@ -796,14 +796,16 @@
   }
 
   function showPage(page) {
-    document.getElementById('boardArea').style.display              = page==='board'?'':'none';
-    document.querySelector('.toolbar').style.display                 = page==='board'?'':'none';
-    document.querySelector('.chip-bar').style.display                = page==='board'?'':'none';
-    document.getElementById('adminPage').style.display               = page==='admin'?'':'none';
-    document.getElementById('laneSearchPage').style.display          = page==='lane'?'':'none';
-    document.getElementById('carrierProfilePage').style.display      = page==='carrier'?'':'none';
-    document.getElementById('rateIntelPage').style.display           = page==='rate'?'':'none';
-    document.getElementById('reportsPage').style.display             = page==='reports'?'':'none';
+    const _s = (id, show) => { const el = document.getElementById(id)||document.querySelector(id); if(el) el.style.display = show?'':'none'; };
+    const _q = (sel, show) => { const el = document.querySelector(sel); if(el) el.style.display = show?'':'none'; };
+    _s('boardArea',          page==='board');
+    _q('.toolbar',           page==='board');
+    _q('.chip-bar',          page==='board');
+    _s('adminPage',          page==='admin');
+    _s('laneSearchPage',     page==='lane');
+    _s('carrierProfilePage', page==='carrier');
+    _s('rateIntelPage',      page==='rate');
+    _s('reportsPage',        page==='reports');
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     if (page==='board')   document.querySelectorAll('.nav-link')[0].classList.add('active');
     if (page==='lane')    document.querySelectorAll('.nav-link')[1].classList.add('active');
@@ -853,965 +855,168 @@
     { re: new RegExp(EP+'(?:\\s+(?:available|ready|located))?\\s*[-\u2013\u2014]?\\s*'+CP+'\\s*,?\\s*\\b'+SP+'\\b','gi'), order:'ecs' },
   ];
 
-  function parseCarrierList() {
-    const text = document.getElementById('pasteArea').value.trim();
+
+  // ── AI-POWERED CARRIER LIST PARSER ──
+  let previewData = [];
+
+  async function parseWithAI() {
+    const text = (document.getElementById('pasteArea')||{value:''}).value.trim();
     if (!text) { showToast('Paste a carrier list first'); return; }
-    parsedTrucks = [];
 
-    // ── DETECT FORMAT ──
-    // If text has date pattern YYYY-MM-DD and no spaces between city/state/equip
-    // it's a concatenated table format (like Square One Transport)
-    const isConcatFormat = /\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+EDT/.test(text) &&
-                           text.includes('Payload');
-    if (isConcatFormat) {
-      parseConcatFormat(text);
-      return;
-    }
+    const btn = document.getElementById('aiParseBtn');
+    if (btn) { btn.innerHTML = '<span>Parsing...</span>'; btn.disabled = true; }
 
-    const mcMatch      = text.match(/MC#?\s*([0-9]+)/i);
-    const phoneMatch   = text.match(/\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}/);
-    const carrierMatch = text.match(/([A-Z][A-Za-z0-9\s&.,]{2,55}(?:LLC|INC|CORP|TRANSPORT|FREIGHT|CARRIER|EXPRESS|LOGISTICS|MOVING|SOLUTIONS?))/i);
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Extract all available trucks from this carrier list. Return ONLY a JSON array with no markdown, no explanation, just the raw JSON array.
 
-    const carrier = carrierMatch ? carrierMatch[1].trim().replace(/[.,\-\s]+$/,'') : 'Unknown Carrier';
-    const mc    = mcMatch    ? 'MC# ' + mcMatch[1]   : '—';
-    const phone = phoneMatch ? phoneMatch[0]          : '—';
+Each truck object must have these exact keys:
+- carrier: string (company name)
+- equip: string (equipment type e.g. "Dry van 53ft", "Sprinter", "Straight truck", "Reefer 53ft")
+- city: string (city name only, no state)
+- state: string (2-letter state code)
+- phone: string (phone number or "—" if not found)
+- mc: string (MC number or "—" if not found)
+- availDate: string (available date in MM/DD/YYYY format, or "Today" if available now, or "—" if unknown)
+- notes: string (any other relevant notes or empty string)
 
-    const seen = new Set();
-    const segments = text.split(/[\n.]/);
-
-    for (const rawSeg of segments) {
-      const seg = rawSeg.trim().replace(/^[-•*\t\s]+/,'');
-      if (seg.length < 4) continue;
-
-      for (const {re, order} of PARSE_PATTERNS) {
-        re.lastIndex = 0;
-        let m;
-        while ((m = re.exec(seg)) !== null) {
-          let equip_raw, city_raw, state;
-          if (order === 'cse') { city_raw=m[1]; state=m[2]; equip_raw=m[3]; }
-          else                  { equip_raw=m[1]; city_raw=m[2]; state=m[3]; }
-
-          state = (state||'').trim().toUpperCase();
-          if (!US_STATES.has(state)) continue;
-          const city = cleanCity(city_raw||'');
-          if (!city || city.length < 2) continue;
-          const equip = normalizeEquip(equip_raw) || (equip_raw||'').trim();
-          if (!equip) continue;
-          const key = city.toLowerCase()+'|'+state+'|'+equip;
-          if (seen.has(key)) continue;
-          seen.add(key);
-
-          // Check for new equipment type
-          if (!normalizeEquip(equip_raw) && equip_raw) {
-            const existing = flaggedEquipment.find(f=>f.raw.toLowerCase()===equip_raw.toLowerCase());
-            if (!existing) {
-              flaggedEquipment.push({raw:equip_raw,carrier,seen:1,date:new Date().toLocaleDateString()});
-              localStorage.setItem('candor_flags_v1',JSON.stringify(flaggedEquipment));
-            } else { existing.seen++; }
-          }
-
-          parsedTrucks.push({
-            id:Date.now()+Math.random(), carrier, mc, phone, city, state, equip,
-            rawEquip:equip_raw, isNew:!normalizeEquip(equip_raw),
-            posted:Date.now(), status:'Available', claimedBy:'', notes:'', include:true
-          });
-        }
-      }
-    }
-
-    if (!parsedTrucks.length) {
-      showToast('Could not find any trucks — check that city/state and equipment type are present');
-      return;
-    }
-    renderPreview();
-    renderFlagList();
-    renderEquipList();
-  }
-
-
-
-  // ── CONCAT TABLE FORMAT PARSER (e.g. Square One Transport) ──
-  function parseConcatFormat(text) {
-    const US_ST = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']);
-    const CONCAT_EQUIP = {
-      'Cargo Van':'Sprinter','Sprinter Van':'Sprinter',
-      'Small Straight':'Straight truck','Large Straight':'Straight truck',
-      'Tractor Trailer':'Dry van 53ft','Straight Truck':'Straight truck',
-      'Cargo Sprinter':'Sprinter','Box Truck':'Straight truck',
-    };
-
-    // Extract carrier name and phone from header
-    const carrierMatch = text.match(/(?:Available vehicles for|from)\s+([A-Z][\w\s]+?)\s+(?:as of|Inc|LLC)/i);
-    const phoneMatch   = text.match(/\d{10,11}/);
-    const emailMatch   = text.match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);
-
-    const carrier = carrierMatch ? carrierMatch[1].trim() : 'Unknown Carrier';
-    const phone   = phoneMatch   ? phoneMatch[0].replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, '($2) $3-$4') : '—';
-
-    // Find table section after "Payload" header
-    const tableStart = text.indexOf('Payload');
-    if (tableStart === -1) { showToast('Could not find table data'); return; }
-    const table = text.substring(tableStart + 7);
-
-    // Pattern anchored on the date stamp YYYY-MM-DD HH:MM EDT
-    const STATE_PAT = '(' + [...US_ST].join('|') + ')';
-    const rowPat = new RegExp(
-      '([A-Z][a-zA-Z]+(?:\\s[A-Z][a-zA-Z]+){0,3})' +  // City
-      STATE_PAT +                                           // State
-      '(\\d{4}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}\\s+EDT)' + // Date
-      '([A-Z][a-zA-Z\\s]+?)' +                          // Vehicle class
-      '(\\d+\\s+lbs)',                                 // Payload
-      'g'
-    );
-
-    const seen = new Set();
-    let m;
-    while ((m = rowPat.exec(table)) !== null) {
-      const city      = m[1].trim();
-      const state     = m[2].trim();
-      const equip_raw = m[4].trim();
-      const equip     = CONCAT_EQUIP[equip_raw] || equip_raw;
-      const key = city.toLowerCase()+'|'+state+'|'+equip;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      parsedTrucks.push({
-        id: Date.now()+Math.random(),
-        carrier, mc:'—', phone, city, state, equip,
-        rawEquip: equip_raw, isNew: !CONCAT_EQUIP[equip_raw],
-        posted: Date.now(), status:'Available',
-        claimedBy:'', notes:'', include:true
+Carrier list:
+${text}`
+          }]
+        })
       });
+
+      const data = await response.json();
+      const raw = data.content && data.content[0] ? data.content[0].text : '[]';
+
+      let parsed = [];
+      try {
+        const clean = raw.replace(/^```json\n?|^```\n?|\n?```$/g, '').trim();
+        parsed = JSON.parse(clean);
+      } catch(e) {
+        showToast('Could not parse AI response — try again');
+        if (btn) { btn.innerHTML = '<span>Parse with AI</span>'; btn.disabled = false; }
+        return;
+      }
+
+      if (!parsed.length) {
+        showToast('No trucks found in that text — check the format');
+        if (btn) { btn.innerHTML = '<span>Parse with AI</span>'; btn.disabled = false; }
+        return;
+      }
+
+      previewData = parsed.map((t, i) => ({...t, _id: i, _checked: true}));
+      renderPreview();
+      const pc1 = document.getElementById('previewCard'); if(pc1) pc1.style.display = '';
+      showToast(parsed.length + ' trucks parsed — review before adding', 'green');
+
+    } catch(e) {
+      showToast('AI parse failed: ' + e.message);
     }
 
-    if (!parsedTrucks.length) {
-      showToast('Could not parse table — try copying the full email including the vehicle list');
-      return;
-    }
-    renderPreview();
-    renderFlagList();
-    renderEquipList();
+    if (btn) { btn.innerHTML = '<span>Parse with AI</span>'; btn.disabled = false; }
   }
 
   function renderPreview() {
-    const card = document.getElementById('previewCard');
-    if (!parsedTrucks.length) {
-      showToast('Could not parse any trucks — check the format and try again');
-      return;
+    const KNOWN_EQUIP = ['Dry van 53ft','Dry van 48ft','Reefer 53ft','Reefer 48ft','Flatbed','Sprinter','Reefer sprinter','Straight truck','Reefer straight truck','Power only','Cargo van'];
+    const summaryEl = document.getElementById('previewSummaryText');
+    const rowsEl    = document.getElementById('previewRows');
+    const hintEl    = document.getElementById('previewHint');
+    if (!rowsEl) return;
+
+    const carrierName = previewData[0]?.carrier || 'carrier';
+    if (summaryEl) summaryEl.textContent = previewData.length + ' trucks parsed from ' + carrierName;
+
+    const newTypes = previewData.filter(t => t.equip && !KNOWN_EQUIP.some(k => k.toLowerCase() === t.equip.toLowerCase()));
+    if (hintEl) hintEl.textContent = newTypes.length ? newTypes.length + ' new equipment type(s) flagged in amber — edit to match standard naming or leave as-is.' : '';
+
+    let html = '';
+    for (const t of previewData) {
+      const isNewEquip = t.equip && !KNOWN_EQUIP.some(k => k.toLowerCase() === t.equip.toLowerCase());
+      const rowBg = isNewEquip ? 'background:#FFFDF0;' : '';
+      const equipBorder = isNewEquip ? 'border-color:#EF9F27;' : '';
+      const badge = isNewEquip
+        ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#FAEEDA;color:#854F0B;font-weight:500;">New type</span>'
+        : '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">New</span>';
+
+      html += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);' + rowBg + '">';
+      html += '<div style="width:36px;padding:10px;flex-shrink:0;"><input type="checkbox" data-id="' + t._id + '" ' + (t._checked?'checked':'') + ' onchange="togglePreviewRow(' + t._id + ',this.checked)" style="width:14px;height:14px;cursor:pointer;" /></div>';
+            const id = t._id;
+      const s = 'width:100%;height:28px;border:1px solid var(--gray-200);border-radius:6px;padding:0 8px;font-size:12px;font-family:\'DM Sans\',sans-serif;background:var(--gray-50);color:var(--black);';
+      html += '<div style="flex:1;padding:8px 10px;"><input value="' + (t.carrier||'').replace(/"/g,"'") + '" data-id="' + id + '" data-field="carrier" onchange="updatePreview(this)" style="' + s + '" /></div>';
+      html += '<div style="width:140px;padding:8px 10px;flex-shrink:0;"><input value="' + (t.equip||'').replace(/"/g,"'") + '" data-id="' + id + '" data-field="equip" onchange="updatePreview(this)" style="' + s + equipBorder + '" /></div>';
+      html += '<div style="width:130px;padding:8px 10px;flex-shrink:0;"><input value="' + (t.city||'').replace(/"/g,"'") + '" data-id="' + id + '" data-field="city" onchange="updatePreview(this)" style="' + s + '" /></div>';
+      html += '<div style="width:55px;padding:8px 10px;flex-shrink:0;"><input value="' + (t.state||'').toUpperCase().replace(/"/g,"'") + '" data-id="' + id + '" data-field="state" onchange="updatePreview(this)" style="' + s + '" /></div>';
+      html += '<div style="width:120px;padding:8px 10px;flex-shrink:0;"><input value="' + (t.phone||'—').replace(/"/g,"'") + '" data-id="' + id + '" data-field="phone" onchange="updatePreview(this)" style="' + s + '" /></div>';
+      html += '<div style="width:120px;padding:8px 10px;flex-shrink:0;"><input value="' + (t.availDate||'Today').replace(/"/g,"'") + '" data-id="' + id + '" data-field="availDate" onchange="updatePreview(this)" style="' + s + '" /></div>';
+      html += '<div style="width:80px;padding:8px 10px;flex-shrink:0;">' + badge + '</div>';
+      html += '<div style="width:36px;padding:8px 10px;flex-shrink:0;"><button onclick="removePreviewRow(' + id + ')" style="font-size:12px;color:var(--gray-400);background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;">✕</button></div>';
+      html += '</div>';
     }
-    card.style.display = '';
-    document.getElementById('previewSubtitle').textContent =
-      parsedTrucks.length + ' truck' + (parsedTrucks.length!==1?'s':'') + ' found — check and add to board';
-
-    const rows = parsedTrucks.map((t,i) => `
-      <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 12px;${t.isNew?'background:#FEFDF0;':''}" id="prow_${i}">
-        <div style="width:40px;flex-shrink:0;">
-          <input type="checkbox" checked onchange="parsedTrucks[${i}].include=this.checked" style="width:16px;height:16px;cursor:pointer;" />
-        </div>
-        <div style="width:200px;flex-shrink:0;">
-          <div style="font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.carrier}</div>
-          <div style="font-size:11px;color:var(--gray-400);font-family:'DM Mono',monospace;">${t.mc}</div>
-        </div>
-        <div style="width:150px;flex-shrink:0;">
-          <div style="font-size:12px;color:var(--gray-600);">${t.equip}</div>
-          ${t.isNew?'<div style="font-size:10px;color:var(--amber-dark);background:var(--amber-light);padding:1px 6px;border-radius:20px;display:inline-block;margin-top:2px;">New type — flagged</div>':''}
-        </div>
-        <div style="width:160px;flex-shrink:0;font-size:12px;color:var(--gray-600);">${t.city}, ${t.state}</div>
-        <div style="width:120px;flex-shrink:0;font-size:12px;color:var(--blue);font-family:'DM Mono',monospace;">${t.phone}</div>
-        <div style="flex:1;">
-          <span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">New</span>
-        </div>
-      </div>`).join('');
-    document.getElementById('previewRows').innerHTML = rows;
+    rowsEl.innerHTML = html;
   }
 
-  function addAllToBoard() {
-    const toAdd = parsedTrucks.filter(t=>t.include);
-    if (!toAdd.length) { showToast('No trucks selected'); return; }
-    const trucks = loadTrucks();
-    toAdd.forEach(t => trucks.unshift({...t, id: Date.now()+Math.random()}));
-    saveTrucks(trucks);
-    logImport(toAdd);
-    discardPreview();
-    showPage('board');
-    renderBoard();
-    showToast(toAdd.length + ' truck' + (toAdd.length!==1?'s':'') + ' added to the board', 'green');
+  function updatePreview(el) {
+    const id    = parseInt(el.dataset.id);
+    const field = el.dataset.field;
+    const val   = el.value;
+    const t = previewData.find(t => t._id === id);
+    if (t) t[field] = val;
   }
 
-  function addSelectedToBoard() { addAllToBoard(); }
-
-  function discardPreview() {
-    parsedTrucks = [];
-    document.getElementById('previewCard').style.display = 'none';
-    document.getElementById('pasteArea').value = '';
+  function togglePreviewRow(id, checked) {
+    const t = previewData.find(t => t._id === id);
+    if (t) t._checked = checked;
   }
 
-  function logImport(trucks) {
-    const logs = JSON.parse(localStorage.getItem(IMPORT_LOG_KEY) || '[]');
-    logs.unshift({ date: new Date().toLocaleString(), count: trucks.length, carrier: trucks[0]?.carrier || 'Unknown', user: currentUser });
-    if (logs.length > 10) logs.pop();
-    localStorage.setItem(IMPORT_LOG_KEY, JSON.stringify(logs));
-    renderImportLog();
+  function removePreviewRow(id) {
+    previewData = previewData.filter(t => t._id !== id);
+    if (!previewData.length) { const pc2 = document.getElementById('previewCard'); if(pc2) pc2.style.display = 'none'; }
+    else renderPreview();
   }
 
-  function renderImportLog() {
-    const logs = JSON.parse(localStorage.getItem(IMPORT_LOG_KEY) || '[]');
-    const el = document.getElementById('importLog');
-    if (!logs.length) { el.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No imports yet</div>'; return; }
-    el.innerHTML = logs.map(l => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--gray-100);font-size:12px;">
-        <div>
-          <div style="font-weight:500;color:var(--black);">${l.carrier}</div>
-          <div style="color:var(--gray-400);margin-top:1px;">${l.date} · by ${l.user}</div>
-        </div>
-        <div style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">+${l.count} truck${l.count!==1?'s':''}</div>
-      </div>`).join('');
-  }
+  function addSelectedToBoard() { addTrucksToBoard(previewData); }
+  function addCheckedToBoard()  { addTrucksToBoard(previewData.filter(t => t._checked)); }
 
-  function renderFlagList() {
-    const el = document.getElementById('flagList');
-    const fc = document.getElementById('flagCount');
-    if (!flaggedEquipment.length) {
-      el.innerHTML = '<div style="font-size:12px;color:var(--gray-400);">No new equipment types flagged yet.</div>';
-      fc.style.display = 'none';
-      return;
-    }
-    fc.style.display = '';
-    fc.textContent = flaggedEquipment.length + ' pending';
-    el.innerHTML = flaggedEquipment.map((f,i) => `
-      <div style="border:1px solid var(--amber-light);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;background:#FEFDF0;">
-        <div style="font-size:12px;font-weight:500;color:var(--black);margin-bottom:3px;">"${f.raw}"</div>
-        <div style="font-size:11px;color:var(--gray-400);margin-bottom:8px;">From ${f.carrier} · ${f.date} · seen ${f.seen} time${f.seen!==1?'s':''}</div>
-        <div style="display:flex;gap:6px;">
-          <button onclick="approveFlag(${i})" style="font-size:11px;padding:3px 10px;border-radius:var(--radius-sm);border:1px solid #C0DD97;background:var(--green-light);color:var(--green-dark);cursor:pointer;font-family:'DM Sans',sans-serif;">Add to list</button>
-          <button onclick="ignoreFlag(${i})" style="font-size:11px;padding:3px 10px;border-radius:var(--radius-sm);border:1px solid var(--gray-200);background:#fff;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;">Ignore</button>
-        </div>
-      </div>`).join('');
-  }
+  function addTrucksToBoard(trucks) {
+    if (!trucks.length) { showToast('No trucks selected'); return; }
+    const existing = loadTrucks();
+    const maxId = existing.reduce((m, t) => Math.max(m, t.id||0), 0);
+    const today = new Date().toLocaleDateString();
 
-  function approveFlag(i) {
-    const f = flaggedEquipment[i];
-    KNOWN_EQUIPMENT.push(f.raw);
-    flaggedEquipment.splice(i,1);
-    localStorage.setItem('candor_flags_v1', JSON.stringify(flaggedEquipment));
-    renderFlagList();
-    renderEquipList();
-    showToast('"'+f.raw+'" added to equipment list', 'green');
-  }
-
-  function ignoreFlag(i) {
-    flaggedEquipment.splice(i,1);
-    localStorage.setItem('candor_flags_v1', JSON.stringify(flaggedEquipment));
-    renderFlagList();
-    showToast('Flagged type ignored');
-  }
-
-  function renderEquipList() {
-    const el = document.getElementById('equipList');
-    if (!el) return;
-    el.innerHTML = KNOWN_EQUIPMENT.map(e =>
-      `<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`
-    ).join('');
-  }
-
-
-  // ── LANE SEARCH FUNCTIONS ──
-  // ── GEOCODING — live lookup via OpenStreetMap Nominatim ──
-  const GEO_CACHE = {};
-
-  async function geocode(cityState) {
-    const key = cityState.toLowerCase().trim();
-    if (GEO_CACHE[key]) return GEO_CACHE[key];
-    try {
-      const q = encodeURIComponent(cityState.trim() + ', USA');
-      const url = 'https://nominatim.openstreetmap.org/search?q='+q+'&format=json&limit=1&countrycodes=us';
-      const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'CandorCarrierBoard/1.0' } });
-      const data = await res.json();
-      if (data && data.length > 0) {
-        const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-        GEO_CACHE[key] = coords;
-        return coords;
-      }
-    } catch(e) { console.warn('Geocode failed for:', cityState, e.message); }
-    return null;
-  }
-
-  // Fallback coordinate table for common cities (instant, no API call)
-  const CC = {
-    'memphis tn':[35.1495,-90.0490],'nashville tn':[36.1627,-86.7816],
-    'chicago il':[41.8781,-87.6298],'dallas tx':[32.7767,-96.7970],
-    'houston tx':[29.7604,-95.3698],'atlanta ga':[33.7490,-84.3880],
-    'detroit mi':[42.3314,-83.0458],'lansing mi':[42.7325,-84.5555],
-    'indianapolis in':[39.7684,-86.1581],'columbus oh':[39.9612,-82.9988],
-    'louisville ky':[38.2527,-85.7585],'lexington ky':[38.0406,-84.5037],
-    'st louis mo':[38.6270,-90.1994],'kansas city mo':[39.0997,-94.5786],
-    'milwaukee wi':[43.0389,-87.9065],'minneapolis mn':[44.9778,-93.2650],
-    'omaha ne':[41.2565,-95.9345],'des moines ia':[41.5868,-93.6250],
-    'denver co':[39.7392,-104.9903],'phoenix az':[33.4484,-112.0740],
-    'seattle wa':[47.6062,-122.3321],'portland or':[45.5051,-122.6750],
-    'los angeles ca':[34.0522,-118.2437],'san francisco ca':[37.7749,-122.4194],
-    'san diego ca':[32.7157,-117.1611],'sacramento ca':[38.5816,-121.4944],
-    'las vegas nv':[36.1699,-115.1398],'salt lake city ut':[40.7608,-111.8910],
-    'albuquerque nm':[35.0844,-106.6504],'oklahoma city ok':[35.4676,-97.5164],
-    'tulsa ok':[36.1540,-95.9928],'little rock ar':[34.7465,-92.2896],
-    'birmingham al':[33.5186,-86.8104],'montgomery al':[32.3792,-86.3077],
-    'jackson ms':[32.2988,-90.1848],'new orleans la':[29.9511,-90.0715],
-    'baton rouge la':[30.4515,-91.1871],'shreveport la':[32.5252,-93.7502],
-    'charlotte nc':[35.2271,-80.8431],'raleigh nc':[35.7796,-78.6382],
-    'richmond va':[37.5407,-77.4360],'baltimore md':[39.2904,-76.6122],
-    'philadelphia pa':[39.9526,-75.1652],'pittsburgh pa':[40.4406,-79.9959],
-    'new york ny':[40.7128,-74.0060],'buffalo ny':[42.8864,-78.8784],
-    'boston ma':[42.3601,-71.0589],'jacksonville fl':[30.3322,-81.6557],
-    'miami fl':[25.7617,-80.1918],'tampa fl':[27.9506,-82.4572],
-    'orlando fl':[28.5383,-81.3792],'austin tx':[30.2672,-97.7431],
-    'san antonio tx':[29.4241,-98.4936],'fort worth tx':[32.7555,-97.3308],
-    'el paso tx':[31.7619,-106.4850],'west memphis ar':[35.1465,-90.1845],
-    'knoxville tn':[35.9606,-83.9207],'chattanooga tn':[35.0456,-85.3097],
-    'clarksville tn':[36.5298,-87.3595],'jackson tn':[35.6145,-88.8139],
-    'grand rapids mi':[42.9634,-85.6681],'ann arbor mi':[42.2808,-83.7430],
-    'flint mi':[43.0125,-83.6875],'sterling heights mi':[42.5803,-83.0302],
-    'east lansing mi':[42.7368,-84.4839],'wixom mi':[42.5248,-83.5360],
-    'davenport ia':[41.5236,-90.5776],'cedar rapids ia':[41.9779,-91.6656],
-    'green bay wi':[44.5133,-88.0133],'madison wi':[43.0731,-89.4012],
-    'naperville il':[41.7508,-88.1535],'aurora il':[41.7606,-88.3201],
-    'rockford il':[42.2711,-89.0940],'springfield il':[39.7817,-89.6501],
-    'fort wayne in':[41.0793,-85.1394],'south bend in':[41.6764,-86.2520],
-    'evansville in':[37.9748,-87.5558],'bloomington in':[39.1653,-86.5264],
-    'bowling green ky':[36.9685,-86.4808],'owensboro ky':[37.7719,-87.1111],
-    'georgetown ky':[38.2098,-84.5588],'harrodsburg ky':[37.7626,-84.8430],
-    'calvert city ky':[37.0337,-88.3503],'crutchfield ky':[36.8309,-88.9856],
-    'savannah ga':[32.0809,-81.0912],'macon ga':[32.8407,-83.6324],
-    'lawrenceville ga':[33.9565,-83.9877],'newnan ga':[33.3807,-84.7997],
-    'cartersville ga':[34.1651,-84.7999],'columbus ga':[32.4610,-84.9877],
-    'fuquay varina nc':[35.5843,-78.7997],'greensboro nc':[36.0726,-79.7920],
-    'durham nc':[35.9940,-78.8986],'asheville nc':[35.5951,-82.5515],
-    'moraine oh':[39.6859,-84.2327],'akron oh':[41.0814,-81.5190],
-    'toledo oh':[41.6528,-83.5379],'cleveland oh':[41.4993,-81.6944],
-    'dayton oh':[39.7589,-84.1916],'cincinnati oh':[39.1031,-84.5120],
-    'madison al':[34.6993,-86.7483],'huntsville al':[34.7304,-86.5861],
-    'camby in':[39.6428,-86.3244],'greensburg in':[39.3370,-85.4847],
-    'staten island ny':[40.5795,-74.1502],'dubuque ia':[42.5006,-90.6646],
-    'franksville wi':[42.7667,-87.9084],'macomb mi':[42.6659,-82.9218],
-    'west bloomfield mi':[42.5537,-83.3777],'monroe mi':[41.9161,-83.3974],
-    'arlington tx':[32.7357,-97.1081],'plano tx':[33.0198,-96.6989],
-    'waco tx':[31.5493,-97.1467],'lubbock tx':[33.5779,-101.8552],
-    'amarillo tx':[35.2220,-101.8313],'beaumont tx':[30.0860,-94.1018],
-    'columbia sc':[34.0007,-81.0348],'charleston sc':[32.7765,-79.9311],
-    'wichita ks':[37.6872,-97.3301],'topeka ks':[39.0558,-95.6890],
-    'fargo nd':[46.8772,-96.7898],'sioux falls sd':[43.5446,-96.7311],
-    'billings mt':[45.7833,-108.5007],'boise id':[43.6150,-116.2023],
-    'spokane wa':[47.6588,-117.4260],'tacoma wa':[47.2529,-122.4443],
-    'fresno ca':[36.7378,-119.7871],'reno nv':[39.5296,-119.8138],
-    'colorado springs co':[38.8339,-104.8214],'aurora co':[39.7294,-104.8319],
-    'tucson az':[32.2226,-110.9747],'mesa az':[33.4152,-111.8315],
-    'north platte ne':[41.1239,-100.7654],'grand island ne':[40.9264,-98.3420],
-    'melrose park il':[41.9006,-87.8617],'des plaines il':[42.0336,-87.8834],
-    'burleson tx':[32.5421,-97.3208],'pearland tx':[29.5635,-95.2860]
-  };
-
-  function getCityCoords(city, state) {
-    if (!city || !state) return null;
-    const key = (city+' '+state).toLowerCase().trim();
-    if (CC[key]) return CC[key];
-    // Try partial match
-    const cityLower = city.toLowerCase().trim();
-    for (const [k,v] of Object.entries(CC)) {
-      if (k.endsWith(' '+state.toLowerCase()) && k.startsWith(cityLower)) return v;
-    }
-    return null;
-  }
-
-    function haversine(lat1, lon1, lat2, lon2) {
-    const R = 3959;
-    const dLat = (lat2-lat1)*Math.PI/180;
-    const dLon = (lon2-lon1)*Math.PI/180;
-    const a = Math.sin(dLat/2)*Math.sin(dLat/2)+
-              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
-              Math.sin(dLon/2)*Math.sin(dLon/2);
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-  }
-
-  function lsCheckMode() {
-    const origin = (document.getElementById('ls_origin')||{value:''}).value.trim();
-    const dest   = (document.getElementById('ls_dest')||{value:''}).value.trim();
-    const badge  = document.getElementById('ls_mode_badge');
-    if (!badge) return;
-    if (!origin) { badge.style.display='none'; return; }
-    badge.style.display='';
-    if (dest) {
-      badge.textContent='Full lane — '+origin+' → '+dest;
-      badge.style.background='var(--green-light)'; badge.style.color='var(--green-dark)';
-    } else {
-      badge.textContent='Area search — '+origin;
-      badge.style.background='var(--blue-light)'; badge.style.color='var(--blue-dark)';
-    }
-  }
-
-  async function runLaneSearch() {
-    const originEl = document.getElementById('ls_origin');
-    const destEl   = document.getElementById('ls_dest');
-    const radEl    = document.getElementById('ls_radius');
-    const eqEl     = document.getElementById('ls_equip');
-    const btn      = document.getElementById('ls_search_btn');
-    if (!originEl) return;
-
-    const originRaw = originEl.value.trim();
-    const destRaw   = destEl ? destEl.value.trim() : '';
-    const radius    = radEl  ? parseInt(radEl.value) : 150;
-    const equipFilt = eqEl   ? eqEl.value.toLowerCase() : '';
-
-    if (!originRaw) { showToast('Enter an origin city to search'); return; }
-
-    // Show loading
-    if (btn) { btn.textContent = 'Searching...'; btn.disabled = true; }
-
-    // Geocode origin — try cache first, then API
-    let originCoords = null;
-    const parts    = originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
-    const originCity = parts ? parts[1].trim() : originRaw;
-    const originSt   = parts ? parts[2].trim().toUpperCase() : '';
-
-    originCoords = getCityCoords(originCity, originSt);
-    if (!originCoords) {
-      originCoords = await geocode(originRaw);
-    }
-
-    // Geocode all truck locations in parallel (cache + API)
-    const trucks = loadTrucks();
-    const uniqueLocs = [...new Set(trucks.map(t => t.city+', '+t.state))];
-    await Promise.allSettled(uniqueLocs.map(async loc => {
-      const p = loc.split(', ');
-      if (!getCityCoords(p[0], p[1]||'')) {
-        const coords = await geocode(loc);
-        if (coords) GEO_CACHE[loc.toLowerCase()] = coords;
-      }
+    const newTrucks = trucks.map((t, i) => ({
+      id: maxId + i + 1,
+      carrier: t.carrier || 'Unknown',
+      mc: t.mc || '—',
+      phone: t.phone || '—',
+      city: t.city || '',
+      state: (t.state||'').toUpperCase(),
+      equip: t.equip || '—',
+      status: 'Available',
+      posted: Date.now(),
+      claimedBy: '',
+      notes: t.notes || '',
+      availDate: t.availDate || 'Today',
+      addedBy: currentUser,
+      addedDate: today
     }));
 
-    const results = [];
-    for (const t of trucks) {
-      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
-      let distance = null;
-      let include = false;
-
-      if (originCoords) {
-        let tc = getCityCoords(t.city, t.state);
-        if (!tc) tc = GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
-        if (tc) {
-          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
-          include = (radius === 9999 || distance <= radius);
-        } else { include = true; }
-      } else {
-        include = !originSt || t.state === originSt;
-        if (!originSt) showToast('"'+originRaw+'" not found — showing all trucks');
-      }
-      if (include) results.push({...t, distance});
-    }
-    results.sort((a,b) => (a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
-
-    // Inbound trucks near origin
-    const inbound = getInboundTrucks();
-    const inboundResults = [];
-    for (const t of inbound) {
-      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
-      let distance = null;
-      let include = false;
-      if (originCoords) {
-        let tc = getCityCoords(t.city, t.state);
-        if (!tc) tc = GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
-        if (tc) {
-          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
-          include = (radius === 9999 || distance <= radius);
-        } else { include = !originSt || t.state === originSt; }
-      } else { include = !originSt || t.state === originSt; }
-      if (include) inboundResults.push({...t, distance});
-    }
-    inboundResults.sort((a,b)=>a.daysOut-b.daysOut);
-
-    if (btn) { btn.textContent = 'Search'; btn.disabled = false; }
-    renderLaneResults(results, originRaw, destRaw, radius, inboundResults);
+    const merged = [...existing, ...newTrucks];
+    saveTrucks(merged);
+    const pc2 = document.getElementById('previewCard'); if(pc2) pc2.style.display = 'none';
+    document.getElementById('pasteArea').value = '';
+    previewData = [];
+    showPage('board');
+    renderBoard();
+    showToast(newTrucks.length + ' truck' + (newTrucks.length !== 1 ? 's' : '') + ' added to board', 'green');
   }
-
-  function renderLaneResults(trucks, origin, dest, radius, inboundTrucks) {
-    inboundTrucks = inboundTrucks || [];
-    const emptyEl = document.getElementById('ls_empty');
-    const gridEl  = document.getElementById('ls_grid');
-    if (emptyEl) emptyEl.style.display='none';
-    if (gridEl)  gridEl.style.display='grid';
-
-    lsCheckMode();
-    const summaryEl = document.getElementById('ls_summary_text');
-    if (summaryEl) summaryEl.textContent = trucks.length+' truck'+(trucks.length!==1?'s':'')+' found'+(radius!==9999?' within '+radius+' miles':'')+' of '+origin;
-
-    const statTrucks = document.getElementById('ls_stat_trucks');
-    const statSub    = document.getElementById('ls_stat_trucks_sub');
-    const countEl    = document.getElementById('ls_truck_count');
-    const histEl     = document.getElementById('ls_hist_count');
-    if (statTrucks) statTrucks.textContent = trucks.length;
-    if (statSub)    statSub.textContent    = (radius!==9999?'within '+radius+' mi':'')+' of '+origin;
-    if (countEl)    countEl.textContent    = trucks.length+' trucks';
-    if (histEl)     histEl.textContent     = '0 carriers';
-
-    const rowsEl = document.getElementById('ls_truck_rows');
-    if (rowsEl) {
-      if (!trucks.length) {
-        rowsEl.innerHTML='<div style="padding:24px;text-align:center;font-size:13px;color:var(--gray-400);">No trucks found in this area — try a larger radius or different equipment filter.</div>';
-      } else {
-        const hrs  = t => Math.floor((Date.now()-t.posted)/3600000);
-        const aClr = t => hrs(t)<12?'var(--green-dark)':hrs(t)<48?'var(--amber-dark)':'var(--red-dark)';
-        const dClr = t => hrs(t)<12?'var(--green)':hrs(t)<48?'var(--amber)':'var(--red)';
-        const aLbl = t => { const m=Math.floor((Date.now()-t.posted)/60000); return m<60?m+'m ago':hrs(t)<24?hrs(t)+'h ago':Math.floor(hrs(t)/24)+'d ago'; };
-        rowsEl.innerHTML = trucks.map(t=>`
-          <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);${hrs(t)>=48?'opacity:0.5':''}">
-            <div style="width:14px;padding:12px 6px 12px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:${dClr(t)};display:inline-block;"></span></div>
-            <div style="flex:1;padding:11px 12px;overflow:hidden;">
-              <div onclick="openCarrierProfile('${t.carrier}','${t.mc}','${t.phone}')" style="font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;" title="View carrier profile">${t.carrier}</div>
-              <div style="font-size:11px;color:var(--blue);font-family:'DM Mono',monospace;">${t.phone}</div>
-            </div>
-            <div style="width:130px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
-            <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.city}, ${t.state}</div>
-            <div style="width:90px;padding:11px 12px;font-size:12px;font-family:'DM Mono',monospace;color:var(--gray-600);flex-shrink:0;">${t.distance!=null?t.distance+' mi':'—'}</div>
-            <div style="width:90px;padding:11px 12px;flex-shrink:0;"><span style="font-size:12px;font-family:'DM Mono',monospace;color:${aClr(t)};">${aLbl(t)}</span></div>
-            <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:${t.status==='Available'?'var(--green-light)':'var(--amber-light)'};color:${t.status==='Available'?'var(--green-dark)':'var(--amber-dark)'};">${t.status}</span></div>
-          </div>`).join('');
-      }
-    }
-
-    // Inbound trucks in lane search
-    const lsInboundEl = document.getElementById('ls_inbound_section');
-    if (lsInboundEl) {
-      if (inboundTrucks.length) {
-        lsInboundEl.style.display = '';
-        const inboundCount = document.getElementById('ls_inbound_count');
-        if (inboundCount) inboundCount.textContent = inboundTrucks.length+' trucks';
-        const inboundRows = document.getElementById('ls_inbound_rows');
-        if (inboundRows) {
-          inboundRows.innerHTML = inboundTrucks.map(t=>`
-            <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
-              <div style="width:14px;padding:12px 6px 12px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span></div>
-              <div style="flex:1;padding:11px 12px;overflow:hidden;">
-                <div style="font-size:13px;font-weight:500;color:var(--black);">${t.carrier}</div>
-                <div style="font-size:11px;color:var(--gray-400);">Off your load · from ${t.origin}</div>
-              </div>
-              <div style="width:130px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
-              <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.city}, ${t.state}</div>
-              <div style="width:90px;padding:11px 12px;flex-shrink:0;">${t.distance!=null?t.distance+' mi':'—'}</div>
-              <div style="width:90px;padding:11px 12px;flex-shrink:0;">
-                <span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:${inboundDayBg(t.daysOut)};color:${inboundDayColor(t.daysOut)};">${inboundDayLabel(t.daysOut)}</span>
-              </div>
-              <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">Inbound</span></div>
-            </div>`).join('');
-        }
-      } else {
-        lsInboundEl.style.display = 'none';
-      }
-    }
-
-    const tagsEl = document.getElementById('ls_equip_tags');
-    if (tagsEl) {
-      const types = [...new Set(trucks.map(t=>t.equip))];
-      tagsEl.innerHTML = types.length
-        ? types.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('')
-        : '<div style="font-size:12px;color:var(--gray-400);">No trucks found nearby</div>';
-    }
-
-    const laneText = dest ? origin+' → '+dest : 'around '+origin;
-    const histRowsEl = document.getElementById('ls_history_rows');
-    const histCountEl = document.getElementById('ls_hist_count');
-    if (histRowsEl) {
-      const history = getHistory();
-      if (!history.length) {
-        const noHistHtml = '<div style="padding:20px 16px;">'
-          + '<div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div>'
-          + '<div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to unlock carrier lane history.</div>'
-          + '<div style="margin-top:8px;"><span onclick="showPage(\"admin\")" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>'
-          + '</div>';
-        histRowsEl.innerHTML = noHistHtml;
-      } else {
-        // Filter history matching this search — use radius when coords available
-        const originLower = origin.toLowerCase();
-        const destLower   = dest.toLowerCase();
-        const originCity  = origin.split(',')[0].trim();
-        const originState = ((origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'').toUpperCase();
-        // Use radius passed to function (not radEl which isn't in scope)
-        const searchRadius = radius || 150;
-        // Get search coords — try built-in table first, then cache
-        const searchCoords = getCityCoords(originCity, originState)
-          || GEO_CACHE[(originCity+' '+originState).toLowerCase()]
-          || GEO_CACHE[originCity.toLowerCase()];
-
-        const matches = history.filter(s => {
-          const o = (s.origin||'').toLowerCase();
-          const d = (s.dest||'').toLowerCase();
-          const destMatch = !dest || d.includes(destLower.split(',')[0].trim().toLowerCase());
-          if (!destMatch) return false;
-
-          // Try radius match if we have coords for search origin
-          if (searchCoords) {
-            const oParts = (s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
-            if (oParts) {
-              const oCity  = oParts[1].trim();
-              const oState = oParts[2].trim().toUpperCase();
-              const oCoords = getCityCoords(oCity, oState)
-                || GEO_CACHE[(oCity+' '+oState).toLowerCase()];
-              if (oCoords) {
-                const dist = haversine(searchCoords[0], searchCoords[1], oCoords[0], oCoords[1]);
-                // Use radius if specified, otherwise show all with coords
-                return searchRadius === 9999 || dist <= searchRadius;
-              }
-            }
-          }
-          // Fallback to text match — check city name appears in origin
-          return o.includes(originCity.toLowerCase());
-        });
-
-        if (!matches.length) {
-          histRowsEl.innerHTML=`<div style="padding:20px 16px;text-align:center;font-size:13px;color:var(--gray-400);">No history found for ${laneText}</div>`;
-          if (histCountEl) histCountEl.textContent='0 carriers';
-        } else {
-          // Group by carrier
-          const carrierMap = {};
-          for (const s of matches) {
-            const name = (s.carrier||'Unknown').split(',')[0].trim();
-            if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:''};
-            carrierMap[name].loads++;
-            carrierMap[name].totalPay += s.carrierCost||0;
-            if (!carrierMap[name].lastDate || new Date(s.date)>new Date(carrierMap[name].lastDate)) carrierMap[name].lastDate=s.date;
-          }
-          const carriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
-          if (histCountEl) histCountEl.textContent=carriers.length+' carriers';
-
-          histRowsEl.innerHTML=`
-            <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-              <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
-              <div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
-              <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>
-              <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>
-            </div>
-            ${carriers.map(([name,d])=>`
-              <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
-                <div style="flex:1;padding:10px 16px;font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
-                <div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads} loads</div>
-                <div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads>0?'$'+(d.totalPay/d.loads).toFixed(0)+'/load':'—'}</div>
-                <div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">${d.lastDate||'—'}</div>
-              </div>`).join('')}`;
-        }
-      }
-    }
-    const rateEl = document.getElementById('ls_rate_content');
-    if (rateEl) {
-      rateEl.innerHTML=`<div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
-        <div style="font-size:20px;flex-shrink:0;">💰</div>
-        <div>
-          <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No rate data for ${laneText}</div>
-          <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Once shipment history is loaded you'll see avg carrier pay, customer charge, and margin on this lane.</div>
-        </div></div>`;
-    }
-  }
-
-
-
-  // ── CARRIER PROFILES ──
-  const CARRIERS_KEY = 'candor_carriers_v1';
-  let currentCarrierId = null;
-
-  function loadCarriers() {
-    try { const c = localStorage.getItem(CARRIERS_KEY); return c ? JSON.parse(c) : {}; }
-    catch(e) { return {}; }
-  }
-  function saveCarriers(c) { localStorage.setItem(CARRIERS_KEY, JSON.stringify(c)); }
-
-  function carrierIdFromName(name) {
-    return name.toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,40);
-  }
-
-  function openCarrierProfile(carrierName, mc, phone) {
-    currentCarrierId = carrierIdFromName(carrierName);
-    const carriers = loadCarriers();
-
-    // Create profile if it doesn't exist
-    if (!carriers[currentCarrierId]) {
-      carriers[currentCarrierId] = {
-        name: carrierName, mc: mc||'—', phone: phone||'—',
-        notes: '', dnu: false, dnuReason: '', dnuBy: '', dnuDate: '',
-        createdAt: new Date().toLocaleDateString()
-      };
-      saveCarriers(carriers);
-    } else {
-      // Update contact info if we have better data
-      if (mc && mc !== '—') carriers[currentCarrierId].mc = mc;
-      if (phone && phone !== '—') carriers[currentCarrierId].phone = phone;
-      saveCarriers(carriers);
-    }
-
-    renderCarrierProfile(currentCarrierId);
-    showPage('carrier');
-  }
-
-  function renderCarrierProfile(carrierId) {
-    const carriers = loadCarriers();
-    const c = carriers[carrierId];
-    if (!c) return;
-
-    // Breadcrumb
-    const bc = document.getElementById('cp_breadcrumb');
-    if (bc) bc.textContent = c.name;
-
-    // Avatar initials
-    const avatar = document.getElementById('cp_avatar');
-    if (avatar) {
-      const initials = c.name.split(/\s+/).map(w=>w[0]).join('').substring(0,2).toUpperCase();
-      avatar.textContent = initials;
-      avatar.style.background = c.dnu ? 'var(--red-light)' : 'var(--green-light)';
-      avatar.style.color = c.dnu ? 'var(--red-dark)' : 'var(--green-dark)';
-    }
-
-    // Name + DNU badge
-    const nameEl = document.getElementById('cp_name');
-    if (nameEl) {
-      nameEl.innerHTML = c.name + (c.dnu ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#F09595;color:#501313;font-weight:500;margin-left:6px;">DNU</span>' : '');
-    }
-
-    const mcEl = document.getElementById('cp_mc');
-    if (mcEl) mcEl.textContent = c.mc;
-
-    // Contact rows
-    const contactEl = document.getElementById('cp_contact_rows');
-    if (contactEl) {
-      const rows = [
-        ['Phone', `<a href="tel:${c.phone}" style="color:var(--blue);">${c.phone}</a>`],
-        ['Home base', c.homeBase||'—'],
-        ['First seen', c.createdAt||'—'],
-        ['Last post', getCarrierLastPost(c.name)||'—'],
-      ];
-      contactEl.innerHTML = rows.map(([label,val]) => `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid var(--gray-100);font-size:12px;">
-          <span style="color:var(--gray-400);">${label}</span>
-          <span style="color:var(--black);font-weight:500;text-align:right;">${val}</span>
-        </div>`).join('');
-    }
-
-    // Notes
-    const notesEl = document.getElementById('cp_notes_input');
-    if (notesEl) notesEl.value = c.notes||'';
-
-    // DNU state
-    renderDNUState(c);
-
-    // Stats from shipment history
-    renderCarrierStats(c.name);
-
-    // Recent truck posts from board
-    renderCarrierPosts(c.name);
-
-    // DNU banner
-    const banner = document.getElementById('cp_dnu_banner');
-    const bannerSmall = document.getElementById('cp_dnu_banner_small');
-    if (banner) {
-      if (c.dnu) {
-        banner.style.display = 'flex';
-        const reasonEl = document.getElementById('cp_dnu_reason_text');
-        const metaEl   = document.getElementById('cp_dnu_meta');
-        if (reasonEl) reasonEl.textContent = c.dnuReason||'No reason provided';
-        if (metaEl)   metaEl.textContent   = c.dnuBy ? 'Flagged by '+c.dnuBy+' · '+c.dnuDate : '';
-      } else {
-        banner.style.display = 'none';
-      }
-    }
-    if (bannerSmall) bannerSmall.style.display = c.dnu ? '' : 'none';
-  }
-
-  function getCarrierLastPost(name) {
-    const trucks = loadTrucks();
-    const match = trucks.filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
-    if (!match.length) return null;
-    match.sort((a,b)=>b.posted-a.posted);
-    const hrs = Math.floor((Date.now()-match[0].posted)/3600000);
-    return hrs < 1 ? 'Just now' : hrs < 24 ? hrs+'h ago' : Math.floor(hrs/24)+'d ago';
-  }
-
-  function renderCarrierStats(name) {
-    // Load from shipment history if available
-    const history = JSON.parse(localStorage.getItem('candor_shipment_history')||'[]');
-    const carLoads = history.filter(s => s.carrier && s.carrier.toLowerCase().includes(name.toLowerCase()));
-
-    const statLoads = document.getElementById('cp_stat_loads');
-    const statRpm   = document.getElementById('cp_stat_rpm');
-    const statPaid  = document.getElementById('cp_stat_paid');
-    const statLast  = document.getElementById('cp_stat_last');
-
-    if (!carLoads.length) {
-      if (statLoads) statLoads.textContent = '—';
-      if (statRpm)   statRpm.textContent   = '—';
-      if (statPaid)  statPaid.textContent  = '—';
-      if (statLast)  statLast.textContent  = '—';
-
-      // Equip tags from board trucks
-      const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
-      const equipEl = document.getElementById('cp_equip_tags');
-      if (equipEl) {
-        const types = [...new Set(trucks.map(t=>t.equip))];
-        equipEl.innerHTML = types.length
-          ? types.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('')
-          : '<div style="font-size:12px;color:var(--gray-400);">Upload history to see equipment data</div>';
-      }
-      return;
-    }
-
-    // Calculate stats
-    const totalPaid = carLoads.reduce((sum,s)=>sum+(s.carrierCost||0),0);
-    const totalMiles = carLoads.reduce((sum,s)=>sum+(s.miles||0),0);
-    const avgRpm = totalMiles > 0 ? (totalPaid/totalMiles).toFixed(2) : '—';
-    const lastLoad = carLoads.sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
-
-    if (statLoads) statLoads.textContent = carLoads.length;
-    if (statRpm)   statRpm.textContent   = totalMiles>0?'$'+avgRpm+'/mi':'—';
-    if (statPaid)  statPaid.textContent  = '$'+Math.round(totalPaid/1000)+'k';
-    if (statLast)  statLast.textContent  = lastLoad?.date||'—';
-
-    // Equipment from history
-    const equipTypes = [...new Set(carLoads.map(s=>s.equip).filter(Boolean))];
-    const equipEl = document.getElementById('cp_equip_tags');
-    if (equipEl && equipTypes.length) {
-      equipEl.innerHTML = equipTypes.map(e=>`<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">${e}</span>`).join('');
-    }
-
-    // Lane history
-    renderCarrierLanes(name, carLoads);
-  }
-
-  function renderCarrierLanes(name, carLoads) {
-    const lanesEl   = document.getElementById('cp_lanes_content');
-    const countEl   = document.getElementById('cp_lanes_count');
-    if (!lanesEl) return;
-
-    // Group by origin→dest
-    const laneMap = {};
-    for (const s of carLoads) {
-      if (!s.origin||!s.dest) continue;
-      const key = s.origin+'→'+s.dest;
-      if (!laneMap[key]) laneMap[key]={origin:s.origin,dest:s.dest,count:0,totalPay:0,lastDate:s.date};
-      laneMap[key].count++;
-      laneMap[key].totalPay += s.carrierCost||0;
-      if (new Date(s.date)>new Date(laneMap[key].lastDate)) laneMap[key].lastDate=s.date;
-    }
-    const lanes = Object.values(laneMap).sort((a,b)=>b.count-a.count).slice(0,10);
-
-    if (!lanes.length) {
-      lanesEl.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No lane data for this carrier</div>';
-      return;
-    }
-    if (countEl) countEl.textContent = lanes.length+' lanes';
-
-    lanesEl.innerHTML = `
-      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-        <div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Origin</div>
-        <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Destination</div>
-        <div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
-        <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>
-        <div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>
-      </div>
-      ${lanes.map(l=>`
-        <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 0;">
-          <div style="flex:1;padding:0 16px;font-size:13px;font-weight:500;color:var(--black);">${l.origin}</div>
-          <div style="flex:1;padding:0 12px;font-size:13px;font-weight:500;color:var(--black);">${l.dest}</div>
-          <div style="width:80px;padding:0 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${l.count} loads</div>
-          <div style="width:100px;padding:0 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${l.count>0?'$'+(l.totalPay/l.count).toFixed(0):'—'}</div>
-          <div style="width:110px;padding:0 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">${l.lastDate||'—'}</div>
-        </div>`).join('')}`;
-  }
-
-  function renderCarrierPosts(name) {
-    const el = document.getElementById('cp_posts_content');
-    if (!el) return;
-    const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
-    if (!trucks.length) {
-      el.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts from this carrier on the board</div>';
-      return;
-    }
-    trucks.sort((a,b)=>b.posted-a.posted);
-    const hrs  = t => Math.floor((Date.now()-t.posted)/3600000);
-    const aLbl = t => { const m=Math.floor((Date.now()-t.posted)/60000); return m<60?m+'m ago':hrs(t)<24?hrs(t)+'h ago':Math.floor(hrs(t)/24)+'d ago'; };
-    const dClr = t => hrs(t)<12?'var(--green)':hrs(t)<48?'var(--amber)':'var(--red)';
-    el.innerHTML = `
-      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-        <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
-        <div style="width:120px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Posted</div>
-        <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Location</div>
-        <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
-        <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
-      </div>
-      ${trucks.map(t=>`
-        <div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">
-          <div style="width:14px;padding:11px 6px 11px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:${dClr(t)};display:inline-block;"></span></div>
-          <div style="width:120px;padding:11px 12px;font-size:12px;font-family:'DM Mono',monospace;color:var(--gray-600);flex-shrink:0;">${aLbl(t)}</div>
-          <div style="flex:1;padding:11px 12px;font-size:13px;font-weight:500;color:var(--black);">${t.city}, ${t.state}</div>
-          <div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${t.equip}</div>
-          <div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:${t.status==='Available'?'var(--green-light)':'var(--amber-light)'};color:${t.status==='Available'?'var(--green-dark)':'var(--amber-dark)'};">${t.status}</span></div>
-        </div>`).join('')}`;
-  }
-
-  function saveCarrierNotes() {
-    const carriers = loadCarriers();
-    if (!carriers[currentCarrierId]) return;
-    const notes = document.getElementById('cp_notes_input').value;
-    carriers[currentCarrierId].notes = notes;
-    saveCarriers(carriers);
-    showToast('Note saved','green');
-  }
-
-  function renderDNUState(c) {
-    const toggle = document.getElementById('cp_dnu_toggle');
-    const knob   = document.getElementById('cp_dnu_knob');
-    const form   = document.getElementById('cp_dnu_form');
-    const info   = document.getElementById('cp_dnu_active_info');
-    if (!toggle) return;
-    if (c.dnu) {
-      toggle.style.background = 'var(--red)';
-      knob.style.left = '18px';
-      if (form) form.style.display = 'none';
-      if (info) { info.style.display=''; info.innerHTML=`<span style="color:var(--red-dark);">${c.dnuReason||'No reason given'}</span><br><span style="font-size:10px;">Flagged by ${c.dnuBy||'—'} · ${c.dnuDate||'—'}</span>`; }
-    } else {
-      toggle.style.background = 'var(--gray-200)';
-      knob.style.left = '2px';
-      if (form) form.style.display = 'none';
-      if (info) info.style.display = 'none';
-    }
-  }
-
-  function toggleDNU() {
-    const carriers = loadCarriers();
-    const c = carriers[currentCarrierId];
-    if (!c) return;
-    if (c.dnu) { removeDNU(); return; }
-    // Show form to enter reason
-    const form = document.getElementById('cp_dnu_form');
-    if (form) form.style.display = form.style.display==='none'?'':'none';
-  }
-
-  function saveDNU() {
-    const reason = document.getElementById('cp_dnu_reason').value.trim();
-    if (!reason) { showToast('Please enter a reason for the DNU flag'); return; }
-    const carriers = loadCarriers();
-    const c = carriers[currentCarrierId];
-    if (!c) return;
-    c.dnu = true;
-    c.dnuReason = reason;
-    c.dnuBy = currentUser;
-    c.dnuDate = new Date().toLocaleDateString();
-    saveCarriers(carriers);
-    renderCarrierProfile(currentCarrierId);
-    showToast(c.name+' flagged as DNU','green');
-  }
-
-  function removeDNU() {
-    const carriers = loadCarriers();
-    const c = carriers[currentCarrierId];
-    if (!c) return;
-    c.dnu = false; c.dnuReason=''; c.dnuBy=''; c.dnuDate='';
-    saveCarriers(carriers);
-    renderCarrierProfile(currentCarrierId);
-    showToast('DNU flag removed');
-  }
-
 
 
   // ── SHIPMENT HISTORY HELPERS ──
@@ -2430,6 +1635,555 @@
     }
   }
 
+
+  function renderLaneResults(trucks, origin, dest, radius, inboundTrucks) {
+    inboundTrucks = inboundTrucks || [];
+    const placeholder = document.getElementById('ls_placeholder');
+    const inboundSec  = document.getElementById('ls_inbound_section');
+    const resultsSec  = document.getElementById('ls_results_section');
+    const resultCount = document.getElementById('ls_result_count');
+    const resultsRows = document.getElementById('ls_results_rows');
+
+    if (placeholder) placeholder.style.display = 'none';
+
+    // Inbound section
+    const lsInboundEl = document.getElementById('ls_inbound_section');
+    if (lsInboundEl) {
+      if (inboundTrucks.length) {
+        lsInboundEl.style.display = '';
+        const inboundCount = document.getElementById('ls_inbound_count');
+        if (inboundCount) inboundCount.textContent = inboundTrucks.length+' trucks';
+        const inboundRows = document.getElementById('ls_inbound_rows');
+        if (inboundRows) {
+          inboundRows.innerHTML = inboundTrucks.map(t =>
+            '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+            + '<div style="width:14px;padding:12px 6px 12px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span></div>'
+            + '<div style="flex:1;padding:11px 12px;overflow:hidden;"><div style="font-size:13px;font-weight:500;color:var(--black);">' + t.carrier + '</div><div style="font-size:11px;color:var(--gray-400);">Off your load · from ' + (t.origin||'') + '</div></div>'
+            + '<div style="width:130px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.equip + '</div>'
+            + '<div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.city + ', ' + t.state + '</div>'
+            + '<div style="width:90px;padding:11px 12px;flex-shrink:0;font-size:12px;color:var(--gray-600);">' + (t.distance!=null?t.distance+' mi':'—') + '</div>'
+            + '<div style="width:90px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:' + inboundDayBg(t.daysOut) + ';color:' + inboundDayColor(t.daysOut) + ';">' + inboundDayLabel(t.daysOut) + '</span></div>'
+            + '<div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">Inbound</span></div>'
+            + '</div>'
+          ).join('');
+        }
+      } else {
+        lsInboundEl.style.display = 'none';
+      }
+    }
+
+    // Live trucks section
+    if (resultsSec) {
+      if (trucks.length) {
+        resultsSec.style.display = '';
+        if (resultCount) resultCount.textContent = trucks.length + ' trucks';
+        if (resultsRows) {
+          const tableHead = '<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">'
+            + '<div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>'
+            + '<div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>'
+            + '<div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>'
+            + '<div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>'
+            + '<div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>'
+            + '<div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Posted</div>'
+            + '<div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>'
+            + '</div>';
+
+          resultsRows.innerHTML = tableHead + trucks.map(t =>
+            '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+            + '<div style="width:14px;padding:11px 6px 11px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:' + (group(t.posted)==='fresh'?'var(--green)':group(t.posted)==='aging'?'var(--amber)':'var(--red)') + ';display:inline-block;"></span></div>'
+            + '<div style="flex:1;padding:11px 12px;overflow:hidden;"><div style="font-size:13px;font-weight:500;color:var(--black);">' + t.carrier + '</div><div style="font-size:11px;color:var(--gray-400);">' + t.mc + ' · ' + t.phone + '</div></div>'
+            + '<div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.equip + '</div>'
+            + '<div style="width:140px;padding:11px 12px;font-size:12px;font-weight:500;color:var(--black);flex-shrink:0;">' + t.city + ', ' + t.state + '</div>'
+            + '<div style="width:90px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + (t.distance!=null?t.distance+' mi':'—') + '</div>'
+            + '<div style="width:100px;padding:11px 12px;flex-shrink:0;font-size:12px;color:var(--gray-400);">' + ageLabel(t.posted) + '</div>'
+            + '<div style="width:100px;padding:11px 12px;flex-shrink:0;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:' + (t.status==='Available'?'var(--green-light)':'var(--amber-light)') + ';color:' + (t.status==='Available'?'var(--green-dark)':'var(--amber-dark)') + ';">' + t.status + '</span></div>'
+            + '</div>'
+          ).join('');
+        }
+      } else {
+        resultsSec.style.display = 'none';
+      }
+    }
+
+    // Carrier history
+    const histRowsEl  = document.getElementById('ls_history_rows');
+    const histCountEl = document.getElementById('ls_hist_count');
+    if (histRowsEl) {
+      const history = getHistory();
+      if (!history.length) {
+        const noHistHtml = '<div style="padding:20px 16px;">'
+          + '<div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div>'
+          + '<div style="font-size:12px;color:var(--gray-400);">Upload your TMS export in Admin to unlock carrier lane history.</div>'
+          + '<div style="margin-top:8px;"><span onclick="showPage(\"admin\")" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div>'
+          + '</div>';
+        histRowsEl.innerHTML = noHistHtml;
+      } else {
+        const originCity  = origin.split(',')[0].trim();
+        const originState = ((origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'').toUpperCase();
+        const searchRadius = radius || 150;
+        const searchCoords = getCityCoords(originCity, originState)
+          || GEO_CACHE[(originCity+' '+originState).toLowerCase()];
+
+        const matches = history.filter(s => {
+          const d = (s.dest||'').toLowerCase();
+          const destMatch = !dest || d.includes(dest.split(',')[0].trim().toLowerCase());
+          if (!destMatch) return false;
+          if (searchCoords) {
+            const oParts = (s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
+            if (oParts) {
+              const oCoords = getCityCoords(oParts[1].trim(), oParts[2].trim())
+                || GEO_CACHE[(oParts[1].trim()+' '+oParts[2].trim()).toLowerCase()];
+              if (oCoords) {
+                const dist = haversine(searchCoords[0], searchCoords[1], oCoords[0], oCoords[1]);
+                return searchRadius === 9999 || dist <= searchRadius;
+              }
+            }
+          }
+          return (s.origin||'').toLowerCase().includes(originCity.toLowerCase());
+        });
+
+        if (!matches.length) {
+          histRowsEl.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No history found for this lane</div>';
+          if (histCountEl) histCountEl.textContent = '0 carriers';
+        } else {
+          const carrierMap = {};
+          for (const s of matches) {
+            const name = (s.carrier||'Unknown').split(',')[0].trim();
+            if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set()};
+            carrierMap[name].loads++;
+            carrierMap[name].totalPay += s.carrierCost||0;
+            if (s.equip && s.equip.trim() && s.equip.trim()!=='-') carrierMap[name].equips.add(s.equip.trim());
+            if (!carrierMap[name].lastDate || new Date(s.date)>new Date(carrierMap[name].lastDate)) carrierMap[name].lastDate=s.date;
+          }
+          const carriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
+          if (histCountEl) histCountEl.textContent = carriers.length+' carriers';
+
+          let carrierRowsHtml = '<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">';
+          carrierRowsHtml += '<div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>';
+          carrierRowsHtml += '<div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>';
+          carrierRowsHtml += '<div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>';
+          carrierRowsHtml += '<div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>';
+          carrierRowsHtml += '</div>';
+          for (const [name, d] of carriers) {
+            const equipTags = [...(d.equips||new Set())].slice(0,3).map(e =>
+              '<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);display:inline-block;margin:1px;">' + e + '</span>'
+            ).join('');
+            carrierRowsHtml += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">';
+            carrierRowsHtml += '<div style="flex:1;padding:10px 16px;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--black);">' + name + '</div>';
+            if (equipTags) carrierRowsHtml += '<div style="margin-top:4px;">' + equipTags + '</div>';
+            carrierRowsHtml += '</div>';
+            carrierRowsHtml += '<div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + d.loads + ' loads</div>';
+            carrierRowsHtml += '<div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + (d.loads>0?'$'+(d.totalPay/d.loads).toFixed(0)+'/load':'—') + '</div>';
+            carrierRowsHtml += '<div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">' + (d.lastDate||'—') + '</div>';
+            carrierRowsHtml += '</div>';
+          }
+          histRowsEl.innerHTML = carrierRowsHtml;
+        }
+      }
+    }
+  }
+
+
+
+  // ── GEOCODING ──
+  const GEO_CACHE = {};
+
+  async function geocode(cityState) {
+    const key = cityState.toLowerCase().trim();
+    if (GEO_CACHE[key]) return GEO_CACHE[key];
+    try {
+      const q = encodeURIComponent(cityState.trim() + ', USA');
+      const url = 'https://nominatim.openstreetmap.org/search?q='+q+'&format=json&limit=1&countrycodes=us';
+      const res = await fetch(url, { headers: { 'Accept-Language': 'en', 'User-Agent': 'CandorCarrierBoard/1.0' } });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+        GEO_CACHE[key] = coords;
+        return coords;
+      }
+    } catch(e) { console.warn('Geocode failed for:', cityState, e.message); }
+    return null;
+  }
+
+  const CC = {
+    'memphis tn':[35.1495,-90.0490],'nashville tn':[36.1627,-86.7816],
+    'chicago il':[41.8781,-87.6298],'dallas tx':[32.7767,-96.7970],
+    'houston tx':[29.7604,-95.3698],'atlanta ga':[33.7490,-84.3880],
+    'detroit mi':[42.3314,-83.0458],'lansing mi':[42.7325,-84.5555],
+    'indianapolis in':[39.7684,-86.1581],'columbus oh':[39.9612,-82.9988],
+    'louisville ky':[38.2527,-85.7585],'lexington ky':[38.0406,-84.5037],
+    'st louis mo':[38.6270,-90.1994],'kansas city mo':[39.0997,-94.5786],
+    'milwaukee wi':[43.0389,-87.9065],'minneapolis mn':[44.9778,-93.2650],
+    'omaha ne':[41.2565,-95.9345],'des moines ia':[41.5868,-93.6250],
+    'denver co':[39.7392,-104.9903],'phoenix az':[33.4484,-112.0740],
+    'seattle wa':[47.6062,-122.3321],'portland or':[45.5051,-122.6750],
+    'los angeles ca':[34.0522,-118.2437],'san francisco ca':[37.7749,-122.4194],
+    'las vegas nv':[36.1699,-115.1398],'salt lake city ut':[40.7608,-111.8910],
+    'oklahoma city ok':[35.4676,-97.5164],'tulsa ok':[36.1540,-95.9928],
+    'little rock ar':[34.7465,-92.2896],'birmingham al':[33.5186,-86.8104],
+    'jackson ms':[32.2988,-90.1848],'new orleans la':[29.9511,-90.0715],
+    'baton rouge la':[30.4515,-91.1871],'charlotte nc':[35.2271,-80.8431],
+    'raleigh nc':[35.7796,-78.6382],'richmond va':[37.5407,-77.4360],
+    'baltimore md':[39.2904,-76.6122],'philadelphia pa':[39.9526,-75.1652],
+    'pittsburgh pa':[40.4406,-79.9959],'new york ny':[40.7128,-74.0060],
+    'jacksonville fl':[30.3322,-81.6557],'miami fl':[25.7617,-80.1918],
+    'tampa fl':[27.9506,-82.4572],'orlando fl':[28.5383,-81.3792],
+    'austin tx':[30.2672,-97.7431],'san antonio tx':[29.4241,-98.4936],
+    'fort worth tx':[32.7555,-97.3308],'west memphis ar':[35.1465,-90.1845],
+    'knoxville tn':[35.9606,-83.9207],'chattanooga tn':[35.0456,-85.3097],
+    'grand rapids mi':[42.9634,-85.6681],'ann arbor mi':[42.2808,-83.7430],
+    'flint mi':[43.0125,-83.6875],'sterling heights mi':[42.5803,-83.0302],
+    'wixom mi':[42.5248,-83.5360],'davenport ia':[41.5236,-90.5776],
+    'cedar rapids ia':[41.9779,-91.6656],'green bay wi':[44.5133,-88.0133],
+    'naperville il':[41.7508,-88.1535],'rockford il':[42.2711,-89.0940],
+    'fort wayne in':[41.0793,-85.1394],'south bend in':[41.6764,-86.2520],
+    'evansville in':[37.9748,-87.5558],'bowling green ky':[36.9685,-86.4808],
+    'savannah ga':[32.0809,-81.0912],'macon ga':[32.8407,-83.6324],
+    'lawrenceville ga':[33.9565,-83.9877],'newnan ga':[33.3807,-84.7997],
+    'greensboro nc':[36.0726,-79.7920],'asheville nc':[35.5951,-82.5515],
+    'akron oh':[41.0814,-81.5190],'toledo oh':[41.6528,-83.5379],
+    'cleveland oh':[41.4993,-81.6944],'dayton oh':[39.7589,-84.1916],
+    'cincinnati oh':[39.1031,-84.5120],'huntsville al':[34.7304,-86.5861],
+    'columbia sc':[34.0007,-81.0348],'charleston sc':[32.7765,-79.9311],
+    'wichita ks':[37.6872,-97.3301],'fargo nd':[46.8772,-96.7898],
+    'boise id':[43.6150,-116.2023],'spokane wa':[47.6588,-117.4260],
+    'fresno ca':[36.7378,-119.7871],'tucson az':[32.2226,-110.9747],
+    'colorado springs co':[38.8339,-104.8214],'north platte ne':[41.1239,-100.7654],
+    'melrose park il':[41.9006,-87.8617],'des plaines il':[42.0336,-87.8834],
+    'burleson tx':[32.5421,-97.3208],'pearland tx':[29.5635,-95.2860],
+    'camby in':[39.6428,-86.3244],'fuquay varina nc':[35.5843,-78.7997],
+    'calvert city ky':[37.0337,-88.3503],'madison wi':[43.0731,-89.4012],
+    'east lansing mi':[42.7368,-84.4839],'macomb mi':[42.6659,-82.9218]
+  };
+
+  function getCityCoords(city, state) {
+    if (!city || !state) return null;
+    const key = (city+' '+state).toLowerCase().trim();
+    if (CC[key]) return CC[key];
+    const cityLower = city.toLowerCase().trim();
+    for (const [k,v] of Object.entries(CC)) {
+      if (k.endsWith(' '+state.toLowerCase()) && k.startsWith(cityLower)) return v;
+    }
+    return null;
+  }
+
+  function haversine(lat1, lon1, lat2, lon2) {
+    const R = 3959;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
+    const a = Math.sin(dLat/2)*Math.sin(dLat/2)+
+              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+              Math.sin(dLon/2)*Math.sin(dLon/2);
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  }
+
+  // ── LANE SEARCH ──
+  async function runLaneSearch() {
+    const originEl = document.getElementById('ls_origin');
+    const destEl   = document.getElementById('ls_dest');
+    const radEl    = document.getElementById('ls_radius');
+    const eqEl     = document.getElementById('ls_equip');
+    const btn      = document.getElementById('ls_search_btn');
+    if (!originEl) return;
+    const originRaw = originEl.value.trim();
+    const destRaw   = destEl ? destEl.value.trim() : '';
+    const radius    = radEl  ? parseInt(radEl.value) : 150;
+    const equipFilt = eqEl   ? eqEl.value.toLowerCase() : '';
+    if (!originRaw) { showToast('Enter an origin city to search'); return; }
+    if (btn) { btn.textContent = 'Searching...'; btn.disabled = true; }
+
+    const parts      = originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+    const originCity = parts ? parts[1].trim() : originRaw;
+    const originSt   = parts ? parts[2].trim().toUpperCase() : '';
+    let originCoords = getCityCoords(originCity, originSt);
+    if (!originCoords) originCoords = await geocode(originRaw);
+
+    const trucks = loadTrucks();
+    const uniqueLocs = [...new Set(trucks.map(t => t.city+', '+t.state))];
+    await Promise.allSettled(uniqueLocs.map(async loc => {
+      const p = loc.split(', ');
+      if (!getCityCoords(p[0], p[1]||'')) {
+        const c = await geocode(loc);
+        if (c) GEO_CACHE[loc.toLowerCase()] = c;
+      }
+    }));
+
+    const results = [];
+    for (const t of trucks) {
+      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
+      let distance = null, include = false;
+      if (originCoords) {
+        let tc = getCityCoords(t.city, t.state) || GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
+        if (tc) {
+          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
+          include = (radius === 9999 || distance <= radius);
+        } else { include = true; }
+      } else {
+        include = !originSt || t.state === originSt;
+      }
+      if (include) results.push({...t, distance});
+    }
+    results.sort((a,b) => (a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
+
+    const inbound = getInboundTrucks();
+    const inboundResults = [];
+    for (const t of inbound) {
+      if (equipFilt && !t.equip.toLowerCase().includes(equipFilt)) continue;
+      let distance = null, include = false;
+      if (originCoords) {
+        let tc = getCityCoords(t.city, t.state) || GEO_CACHE[(t.city+', '+t.state).toLowerCase()];
+        if (tc) {
+          distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
+          include = (radius === 9999 || distance <= radius);
+        } else { include = !originSt || t.state === originSt; }
+      } else { include = !originSt || t.state === originSt; }
+      if (include) inboundResults.push({...t, distance});
+    }
+    inboundResults.sort((a,b)=>a.daysOut-b.daysOut);
+
+    if (btn) { btn.textContent = 'Search'; btn.disabled = false; }
+    renderLaneResults(results, originRaw, destRaw, radius, inboundResults);
+  }
+
+  // ── CARRIER PROFILES ──
+  const CARRIERS_KEY = 'candor_carriers_v1';
+  let currentCarrierId = null;
+
+  function loadCarriers() {
+    try { const c = localStorage.getItem(CARRIERS_KEY); return c ? JSON.parse(c) : {}; }
+    catch(e) { return {}; }
+  }
+  function saveCarriers(c) { localStorage.setItem(CARRIERS_KEY, JSON.stringify(c)); }
+
+  function carrierIdFromName(name) {
+    return name.toLowerCase().replace(/[^a-z0-9]/g,'_').substring(0,40);
+  }
+
+  function openCarrierProfile(carrierName, mc, phone) {
+    currentCarrierId = carrierIdFromName(carrierName);
+    const carriers = loadCarriers();
+    if (!carriers[currentCarrierId]) {
+      carriers[currentCarrierId] = {
+        name: carrierName, mc: mc||'—', phone: phone||'—',
+        notes: '', dnu: false, dnuReason: '', dnuBy: '', dnuDate: '',
+        createdAt: new Date().toLocaleDateString()
+      };
+      saveCarriers(carriers);
+    } else {
+      if (mc && mc !== '—') carriers[currentCarrierId].mc = mc;
+      if (phone && phone !== '—') carriers[currentCarrierId].phone = phone;
+      saveCarriers(carriers);
+    }
+    renderCarrierProfile(currentCarrierId);
+    showPage('carrier');
+  }
+
+  function renderCarrierProfile(carrierId) {
+    const carriers = loadCarriers();
+    const c = carriers[carrierId];
+    if (!c) return;
+    const bc = document.getElementById('cp_breadcrumb');
+    if (bc) bc.textContent = c.name;
+    const avatar = document.getElementById('cp_avatar');
+    if (avatar) {
+      const initials = c.name.split(/\s+/).map(w=>w[0]).join('').substring(0,2).toUpperCase();
+      avatar.textContent = initials;
+      avatar.style.background = c.dnu ? 'var(--red-light)' : 'var(--green-light)';
+      avatar.style.color = c.dnu ? 'var(--red-dark)' : 'var(--green-dark)';
+    }
+    const nameEl = document.getElementById('cp_name');
+    if (nameEl) nameEl.innerHTML = c.name + (c.dnu ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#F09595;color:#501313;font-weight:500;margin-left:6px;">DNU</span>' : '');
+    const mcEl = document.getElementById('cp_mc');
+    if (mcEl) mcEl.textContent = c.mc;
+    const contactEl = document.getElementById('cp_contact_rows');
+    if (contactEl) {
+      const rows = [['Phone','<a href="tel:'+c.phone+'" style="color:var(--blue);">'+c.phone+'</a>'],
+                    ['First seen',c.createdAt||'—'],['Last post',getCarrierLastPost(c.name)||'—']];
+      contactEl.innerHTML = rows.map(([label,val]) =>
+        '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 16px;border-bottom:1px solid var(--gray-100);font-size:12px;">'
+        + '<span style="color:var(--gray-400);">'+label+'</span>'
+        + '<span style="color:var(--black);font-weight:500;">'+val+'</span></div>').join('');
+    }
+    const notesEl = document.getElementById('cp_notes_input');
+    if (notesEl) notesEl.value = c.notes||'';
+    renderDNUState(c);
+    renderCarrierStats(c.name);
+    renderCarrierPosts(c.name);
+    const bannerSmall = document.getElementById('cp_dnu_banner_small');
+    if (bannerSmall) bannerSmall.style.display = c.dnu ? '' : 'none';
+  }
+
+  function getCarrierLastPost(name) {
+    const trucks = loadTrucks();
+    const match = trucks.filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+    if (!match.length) return null;
+    match.sort((a,b)=>b.posted-a.posted);
+    const hrs = Math.floor((Date.now()-match[0].posted)/3600000);
+    return hrs < 1 ? 'Just now' : hrs < 24 ? hrs+'h ago' : Math.floor(hrs/24)+'d ago';
+  }
+
+  function renderCarrierStats(name) {
+    const history = JSON.parse(localStorage.getItem('candor_shipment_history')||'[]');
+    const carLoads = history.filter(s => s.carrier && s.carrier.toLowerCase().includes(name.toLowerCase()));
+    const statLoads = document.getElementById('cp_stat_loads');
+    const statRpm   = document.getElementById('cp_stat_rpm');
+    const statPaid  = document.getElementById('cp_stat_paid');
+    const statLast  = document.getElementById('cp_stat_last');
+    if (!carLoads.length) {
+      if (statLoads) statLoads.textContent = '0';
+      if (statRpm)   statRpm.textContent   = '—';
+      if (statPaid)  statPaid.textContent  = '—';
+      if (statLast)  statLast.textContent  = '—';
+      const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+      const equipEl = document.getElementById('cp_equip_tags');
+      if (equipEl) {
+        const types = [...new Set(trucks.map(t=>t.equip))];
+        equipEl.innerHTML = types.length
+          ? types.map(e=>'<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">'+e+'</span>').join('')
+          : '<div style="font-size:12px;color:var(--gray-400);">No equipment data</div>';
+      }
+      return;
+    }
+    const totalPaid = carLoads.reduce((sum,s)=>sum+(s.carrierCost||0),0);
+    const lastLoad = carLoads.sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+    if (statLoads) statLoads.textContent = carLoads.length;
+    if (statRpm)   statRpm.textContent   = '$'+(totalPaid/carLoads.length).toFixed(0)+'/load';
+    if (statPaid)  statPaid.textContent  = '$'+Math.round(totalPaid/1000)+'k';
+    if (statLast)  statLast.textContent  = lastLoad?.date||'—';
+    const equipTypes = [...new Set(carLoads.map(s=>s.equip).filter(Boolean))];
+    const equipEl = document.getElementById('cp_equip_tags');
+    if (equipEl && equipTypes.length) {
+      equipEl.innerHTML = equipTypes.map(e=>'<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">'+e+'</span>').join('');
+    }
+    renderCarrierLanes(name, carLoads);
+  }
+
+  function renderCarrierLanes(name, carLoads) {
+    const lanesEl = document.getElementById('cp_lanes_content');
+    const countEl = document.getElementById('cp_lanes_count');
+    if (!lanesEl) return;
+    const laneMap = {};
+    for (const s of carLoads) {
+      if (!s.origin||!s.dest) continue;
+      const key = s.origin+'→'+s.dest;
+      if (!laneMap[key]) laneMap[key]={origin:s.origin,dest:s.dest,count:0,totalPay:0,lastDate:s.date};
+      laneMap[key].count++;
+      laneMap[key].totalPay += s.carrierCost||0;
+      if (new Date(s.date)>new Date(laneMap[key].lastDate)) laneMap[key].lastDate=s.date;
+    }
+    const lanes = Object.values(laneMap).sort((a,b)=>b.count-a.count).slice(0,10);
+    if (!lanes.length) { lanesEl.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No lane data</div>'; return; }
+    if (countEl) countEl.textContent = lanes.length+' lanes';
+    let html = '<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">'
+      + '<div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Origin</div>'
+      + '<div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Destination</div>'
+      + '<div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>'
+      + '<div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>'
+      + '<div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div>'
+      + '</div>';
+    for (const l of lanes) {
+      html += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+        + '<div style="flex:1;padding:10px 16px;font-size:13px;font-weight:500;color:var(--black);">'+l.origin+'</div>'
+        + '<div style="flex:1;padding:10px 12px;font-size:13px;font-weight:500;color:var(--black);">'+l.dest+'</div>'
+        + '<div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">'+l.count+' loads</div>'
+        + '<div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">'+(l.count>0?'$'+(l.totalPay/l.count).toFixed(0):'—')+'</div>'
+        + '<div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">'+(l.lastDate||'—')+'</div>'
+        + '</div>';
+    }
+    lanesEl.innerHTML = html;
+  }
+
+  function renderCarrierPosts(name) {
+    const el = document.getElementById('cp_posts_content');
+    if (!el) return;
+    const trucks = loadTrucks().filter(t=>t.carrier.toLowerCase()===name.toLowerCase());
+    if (!trucks.length) { el.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts</div>'; return; }
+    trucks.sort((a,b)=>b.posted-a.posted);
+    const aLbl = t => { const m=Math.floor((Date.now()-t.posted)/60000); return m<60?m+'m ago':Math.floor(m/60)<24?Math.floor(m/60)+'h ago':Math.floor(m/1440)+'d ago'; };
+    let html = '';
+    for (const t of trucks) {
+      html += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 16px;">'
+        + '<div style="font-size:12px;color:var(--gray-400);width:100px;">'+aLbl(t)+'</div>'
+        + '<div style="flex:1;font-size:13px;font-weight:500;color:var(--black);">'+t.city+', '+t.state+'</div>'
+        + '<div style="font-size:12px;color:var(--gray-600);width:140px;">'+t.equip+'</div>'
+        + '<div style="width:90px;"><span style="font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500;background:'+(t.status==='Available'?'var(--green-light)':'var(--amber-light)')+';color:'+(t.status==='Available'?'var(--green-dark)':'var(--amber-dark)')+';">'+t.status+'</span></div>'
+        + '</div>';
+    }
+    el.innerHTML = html;
+  }
+
+  function saveCarrierNotes() {
+    const carriers = loadCarriers();
+    if (!carriers[currentCarrierId]) return;
+    carriers[currentCarrierId].notes = (document.getElementById('cp_notes_input')||{value:''}).value;
+    saveCarriers(carriers);
+    showToast('Note saved','green');
+  }
+
+  function renderDNUState(c) {
+    const toggle = document.getElementById('cp_dnu_toggle');
+    const knob   = document.getElementById('cp_dnu_knob');
+    const form   = document.getElementById('cp_dnu_form');
+    const info   = document.getElementById('cp_dnu_active_info');
+    if (!toggle) return;
+    if (c.dnu) {
+      toggle.style.background = 'var(--red)';
+      if (knob) knob.style.left = '18px';
+      if (form) form.style.display = 'none';
+      if (info) { info.style.display=''; info.innerHTML='<span style="color:var(--red-dark);">'+(c.dnuReason||'No reason given')+'</span>'; }
+    } else {
+      toggle.style.background = 'var(--gray-200)';
+      if (knob) knob.style.left = '2px';
+      if (form) form.style.display = 'none';
+      if (info) info.style.display = 'none';
+    }
+  }
+
+  function toggleDNU() {
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    if (c.dnu) { removeDNU(); return; }
+    const form = document.getElementById('cp_dnu_form');
+    if (form) form.style.display = form.style.display==='none'?'':'none';
+  }
+
+  function saveDNU() {
+    const reason = (document.getElementById('cp_dnu_reason')||{value:''}).value.trim();
+    if (!reason) { showToast('Please enter a reason'); return; }
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    c.dnu = true; c.dnuReason = reason; c.dnuBy = currentUser; c.dnuDate = new Date().toLocaleDateString();
+    saveCarriers(carriers);
+    renderCarrierProfile(currentCarrierId);
+    showToast(c.name+' flagged as DNU','green');
+  }
+
+  function removeDNU() {
+    const carriers = loadCarriers();
+    const c = carriers[currentCarrierId];
+    if (!c) return;
+    c.dnu=false; c.dnuReason=''; c.dnuBy=''; c.dnuDate='';
+    saveCarriers(carriers);
+    renderCarrierProfile(currentCarrierId);
+    showToast('DNU flag removed');
+  }
+
+  // ── RATE INTEL HELPERS ──
+  function lsCheckMode() {
+    const origin = (document.getElementById('ls_origin')||{value:''}).value.trim();
+    const dest   = (document.getElementById('ls_dest')||{value:''}).value.trim();
+    const badge  = document.getElementById('ls_mode_badge');
+    if (!badge) return;
+    if (!origin) { badge.style.display='none'; return; }
+    badge.style.display='';
+    if (dest) { badge.textContent='Full lane — '+origin+' → '+dest; badge.style.background='var(--green-light)'; badge.style.color='var(--green-dark)'; }
+    else { badge.textContent='Area search — '+origin; badge.style.background='var(--blue-light)'; badge.style.color='var(--blue-dark)'; }
+  }
+
+
+
   // Hook up nav links
   function initNav() {
     const links = document.querySelectorAll('.nav-link');
@@ -2438,7 +2192,7 @@
     links[2].onclick = () => { showPage('board'); showToast('Click any carrier name on the board to view their profile'); };
     links[3].onclick = () => { showPage('rate'); };
     links[4].onclick = () => { showPage('reports'); };
-    links[5].onclick = () => { showPage('admin'); renderImportLog(); renderFlagList(); renderEquipList(); };
+    links[5].onclick = () => { showPage('admin'); updateHistoryStats(); };
 
     // Lane search — attach all handlers after JS is fully loaded
     const lsOrigin  = document.getElementById('ls_origin');
@@ -2521,535 +2275,296 @@ document.addEventListener('DOMContentLoaded', function() {
         <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
           <div>
             <div style="font-size:13px;font-weight:600;color:var(--black);">Paste carrier list</div>
-            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Paste raw email text, a list, or any format — the parser handles it</div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Any format — email, table, bullet list, copy/paste from anywhere</div>
           </div>
+          <div style="font-size:11px;padding:3px 10px;border-radius:20px;background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC;">AI-powered</div>
         </div>
         <div style="padding:16px;">
-          <textarea id="pasteArea" placeholder="Paste carrier email or list here...
-
-Example:
-Hi team, we have available:
-- 1x 53ft dry van — Memphis, TN — ready now
-- 1x Sprinter — Nashville, TN — tomorrow AM
-Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100%;height:160px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:12px;font-size:13px;color:var(--black);font-family:'DM Sans',sans-serif;background:var(--gray-50);resize:none;line-height:1.6;"></textarea>
+          <textarea id="pasteArea" placeholder="Paste carrier email or list here...&#10;&#10;Example:&#10;Hi team — Square One has available:&#10;553S  Sterling Heights MI  Sprinter Van&#10;557B  Wixom MI  Small Straight&#10;Contact: 1-800-517-4645  MC# 123456" style="width:100%;height:160px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:12px;font-size:12px;color:var(--black);font-family:'DM Mono',monospace;background:var(--gray-50);resize:none;line-height:1.6;"></textarea>
           <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
-            <button onclick="parseCarrierList()" style="height:38px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Parse list</button>
+            <button onclick="parseWithAI()" id="aiParseBtn" style="height:38px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:6px;">
+              <span>Parse with AI</span>
+            </button>
             <button onclick="document.getElementById('pasteArea').value=''" style="height:38px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Clear</button>
-            <span style="font-size:11px;color:var(--gray-400);margin-left:4px;">Supports any format — email, text, copy/paste from anywhere</span>
+            <span style="font-size:11px;color:var(--gray-400);">Copy/paste text — more accurate than screenshots</span>
           </div>
         </div>
       </div>
 
-      <!-- PREVIEW CARD -->
+      <!-- AI PREVIEW CARD -->
       <div id="previewCard" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+        <!-- Summary bar -->
+        <div id="previewSummary" style="padding:10px 16px;background:var(--green-light);border-bottom:1px solid #C0DD97;display:flex;justify-content:space-between;align-items:center;">
           <div>
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Parsed results — review before adding</div>
-            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;" id="previewSubtitle"></div>
+            <div id="previewSummaryText" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div>
+            <div style="font-size:11px;color:var(--green-dark);margin-top:1px;">Review and edit before adding. Click any field to edit.</div>
           </div>
-          <button onclick="addAllToBoard()" style="height:34px;padding:0 16px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board →</button>
         </div>
-        <!-- TABLE HEAD -->
-        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-          <div style="width:40px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;"></div>
-          <div style="width:200px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Carrier</div>
-          <div style="width:150px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
-          <div style="width:160px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>
-          <div style="width:120px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Phone</div>
-          <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Action</div>
+
+        <!-- Editable table -->
+        <div style="overflow-x:auto;">
+          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);min-width:900px;">
+            <div style="width:36px;padding:7px 10px;flex-shrink:0;"></div>
+            <div style="flex:1;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+            <div style="width:140px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+            <div style="width:130px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">City</div>
+            <div style="width:55px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">ST</div>
+            <div style="width:120px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Phone</div>
+            <div style="width:120px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avail date</div>
+            <div style="width:80px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
+            <div style="width:36px;padding:7px 10px;flex-shrink:0;"></div>
+          </div>
+          <div id="previewRows" style="min-width:900px;"></div>
         </div>
-        <div id="previewRows"></div>
-        <div style="padding:12px 16px;border-top:1px solid var(--gray-200);display:flex;gap:8px;">
-          <button onclick="addAllToBoard()" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board</button>
-          <button onclick="addSelectedToBoard()" style="height:36px;padding:0 16px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:12px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Add selected only</button>
-          <button onclick="discardPreview()" style="height:36px;padding:0 16px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:12px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Discard</button>
+
+        <!-- Actions -->
+        <div style="padding:12px 16px;display:flex;gap:8px;border-top:1px solid var(--gray-200);align-items:center;flex-wrap:wrap;">
+          <button onclick="addSelectedToBoard()" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board →</button>
+          <button onclick="addCheckedToBoard()" style="height:36px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Add selected only</button>
+          <button onclick="document.getElementById('previewCard').style.display='none'" style="height:36px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Discard</button>
+          <span id="previewHint" style="font-size:11px;color:var(--gray-400);margin-left:4px;"></span>
         </div>
       </div>
-
-      <!-- RECENT IMPORTS LOG -->
-      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);">
-          <div style="font-size:13px;font-weight:600;color:var(--black);">Recent imports</div>
-          <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Last 10 carrier lists added to the board</div>
-        </div>
-        <div id="importLog" style="padding:0;">
-          <div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No imports yet — paste a carrier list above to get started</div>
-        </div>
-      </div>
-
     </div>
 
-    <!-- RIGHT COL -->
-    <div style="display:flex;flex-direction:column;gap:16px;">
+      <!-- RIGHT COL -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
 
-      <!-- NEW EQUIPMENT FLAGS -->
-      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-          <div style="font-size:13px;font-weight:600;color:var(--black);">New equipment flags</div>
-          <span id="flagCount" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--amber-light);color:var(--amber-dark);font-weight:500;display:none;">0 pending</span>
-        </div>
-        <div id="flagList" style="padding:14px 16px;">
-          <div style="font-size:12px;color:var(--gray-400);">No new equipment types flagged yet.</div>
-        </div>
-      </div>
-
-      <!-- TIPS -->
-      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-        <div style="font-size:13px;font-weight:600;color:var(--black);margin-bottom:12px;">What the parser looks for</div>
-        <div style="display:flex;flex-direction:column;gap:10px;">
-          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
-            <strong style="color:var(--black);">Carrier name</strong><br>Any company name or "carrier" mention
-          </div>
-          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
-            <strong style="color:var(--black);">Equipment type</strong><br>Van, reefer, flatbed, sprinter, straight truck, etc.
-          </div>
-          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
-            <strong style="color:var(--black);">Location</strong><br>City + state in any format
-          </div>
-          <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);">
-            <strong style="color:var(--black);">Phone & MC#</strong><br>Any phone number format and MC numbers
-          </div>
-        </div>
-      </div>
-
-      <!-- KNOWN EQUIPMENT LIST -->
-      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);">
-          <div style="font-size:13px;font-weight:600;color:var(--black);">Known equipment types</div>
-          <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Parser matches against these automatically</div>
-        </div>
-        <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px;" id="equipList"></div>
-      </div>
-
-      <!-- SHIPMENT HISTORY IMPORT -->
-      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Shipment history import</div>
-            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Upload your TMS export to power rate intel, carrier history, and reports</div>
-          </div>
-          <span id="sh_badge" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-400);">Not loaded</span>
-        </div>
-        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-
-          <!-- Stats row -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;" id="sh_stats_row">
-            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
-              <div style="font-size:11px;color:var(--gray-400);">Shipments loaded</div>
-              <div id="sh_count" style="font-size:18px;font-weight:600;color:var(--black);">—</div>
+        <!-- SHIPMENT HISTORY IMPORT -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--black);">Shipment history import</div>
+              <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Upload your TMS export to power rate intel, carrier history, and reports</div>
             </div>
-            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
-              <div style="font-size:11px;color:var(--gray-400);">Last import</div>
-              <div id="sh_last_import" style="font-size:13px;font-weight:500;color:var(--black);padding-top:2px;">—</div>
+            <span id="sh_badge" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-400);">Not loaded</span>
+          </div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+                <div style="font-size:11px;color:var(--gray-400);">Shipments loaded</div>
+                <div id="sh_count" style="font-size:18px;font-weight:600;color:var(--black);">—</div>
+              </div>
+              <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
+                <div style="font-size:11px;color:var(--gray-400);">Last import</div>
+                <div id="sh_last_import" style="font-size:13px;font-weight:500;color:var(--black);padding-top:2px;">—</div>
+              </div>
             </div>
-          </div>
-
-          <!-- Upload zone -->
-          <div id="sh_upload_zone"
-               onclick="document.getElementById('historyFileInput').click()"
-               ondragover="event.preventDefault();this.style.borderColor='var(--green)';this.style.background='var(--green-light)'"
-               ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)'"
-               ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)';handleHistoryDrop(event)"
-               style="border:1px dashed var(--gray-200);border-radius:var(--radius-md);padding:24px 16px;text-align:center;background:var(--gray-50);cursor:pointer;transition:all 0.15s;">
-            <div style="font-size:24px;margin-bottom:8px;">📂</div>
-            <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Drop your TMS export here</div>
-            <div style="font-size:12px;color:var(--gray-400);">or click to browse</div>
-            <div style="font-size:11px;color:var(--gray-300);margin-top:5px;">Accepts .csv</div>
-            <input type="file" id="historyFileInput" accept=".csv" style="display:none;" id="historyFileInputEl" />
-          </div>
-
-          <!-- Progress -->
-          <div id="sh_progress" style="display:none;padding:10px 12px;background:var(--green-light);border:1px solid #C0DD97;border-radius:var(--radius-sm);">
-            <div style="font-size:12px;font-weight:500;color:var(--green-dark);" id="sh_progress_text">Processing...</div>
-            <div style="margin-top:6px;height:4px;background:#C0DD97;border-radius:2px;overflow:hidden;">
-              <div id="sh_progress_bar" style="height:100%;background:var(--green);width:0%;transition:width 0.3s;border-radius:2px;"></div>
+            <div id="sh_upload_zone"
+                 onclick="document.getElementById('historyFileInput').click()"
+                 ondragover="event.preventDefault();this.style.borderColor='var(--green)';this.style.background='var(--green-light)'"
+                 ondragleave="this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)'"
+                 ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';this.style.background='var(--gray-50)';handleHistoryDrop(event)"
+                 style="border:1px dashed var(--gray-200);border-radius:var(--radius-md);padding:24px 16px;text-align:center;background:var(--gray-50);cursor:pointer;transition:all 0.15s;">
+              <div style="font-size:24px;margin-bottom:8px;">📂</div>
+              <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Drop your TMS export here</div>
+              <div style="font-size:12px;color:var(--gray-400);">or click to browse</div>
+              <div style="font-size:11px;color:var(--gray-300);margin-top:5px;">Accepts .csv</div>
+              <input type="file" id="historyFileInput" accept=".csv" style="display:none;" />
             </div>
+            <div id="sh_progress" style="display:none;padding:10px 12px;background:var(--green-light);border:1px solid #C0DD97;border-radius:var(--radius-sm);">
+              <div style="font-size:12px;font-weight:500;color:var(--green-dark);" id="sh_progress_text">Processing...</div>
+              <div style="margin-top:6px;height:4px;background:#C0DD97;border-radius:2px;overflow:hidden;">
+                <div id="sh_progress_bar" style="height:100%;background:var(--green);width:0%;transition:width 0.3s;border-radius:2px;"></div>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--gray-400);line-height:1.7;">
+              <strong style="color:var(--black);">Expected columns:</strong> Carrier, Origin, Destination, Actual Pickup Date, Actual Delivery Date, Carrier Costs, Customer Costs, Equipment needed
+            </div>
+            <button onclick="clearHistory()" style="height:32px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;width:fit-content;">Clear history data</button>
           </div>
-
-          <!-- Expected columns -->
-          <div style="font-size:11px;color:var(--gray-400);line-height:1.7;">
-            <strong style="color:var(--black);">Expected columns:</strong> Carrier, Origin, Destination, Actual Pickup Date, Carrier Costs, Customer Costs, Equipment needed<br>
-            Extra columns are ignored automatically.
-          </div>
-
-          <!-- Clear button -->
-          <button onclick="clearHistory()" style="height:32px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;width:fit-content;">Clear history data</button>
         </div>
-      </div>
 
+        <!-- NEW EQUIPMENT FLAGS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+          <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:13px;font-weight:600;color:var(--black);">New equipment flags</div>
+          </div>
+          <div id="flagList" style="padding:14px 16px;">
+            <div style="font-size:12px;color:var(--gray-400);">No new equipment types flagged yet.</div>
+          </div>
+        </div>
+
+        <!-- TIPS -->
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+          <div style="font-size:13px;font-weight:600;color:var(--black);margin-bottom:12px;">What the AI parser looks for</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);"><strong style="color:var(--black);">Carrier name</strong><br>Any company name or identifier</div>
+            <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);"><strong style="color:var(--black);">Equipment type</strong><br>Van, reefer, flatbed, sprinter, straight truck, etc.</div>
+            <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);"><strong style="color:var(--black);">City &amp; state</strong><br>Where the truck is available from</div>
+            <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);"><strong style="color:var(--black);">Available date</strong><br>When the truck is ready — today, tomorrow, or a specific date</div>
+            <div style="font-size:12px;color:var(--gray-600);background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;line-height:1.6;border:1px solid var(--gray-200);"><strong style="color:var(--black);">Phone &amp; MC#</strong><br>Contact info and carrier MC number if listed</div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 </div>
-
 
 <!-- LANE SEARCH PAGE -->
 <div id="laneSearchPage" style="display:none;">
-
-  <!-- SEARCH BAR -->
-  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;">
-    <div style="display:flex;align-items:center;gap:10px;max-width:960px;flex-wrap:wrap;">
-      <div style="position:relative;flex:1;min-width:180px;">
-        <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--gray-400);" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/><path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        <input id="ls_origin" type="text" placeholder="Origin city, ST (e.g. Memphis, TN)" style="width:100%;height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px 0 32px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);"  />
-      </div>
-      <div style="color:var(--gray-300);font-size:18px;">→</div>
-      <div style="position:relative;flex:1;min-width:180px;">
-        <input id="ls_dest" type="text" placeholder="Destination (optional)" style="width:100%;height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);"  />
-      </div>
-      <select id="ls_radius" style="height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--gray-50);color:var(--black);min-width:130px;">
-        <option value="50">50 mi radius</option>
-        <option value="100">100 mi radius</option>
-        <option value="150" selected>150 mi radius</option>
-        <option value="200">200 mi radius</option>
-        <option value="300">300 mi radius</option>
-        <option value="9999">Any distance</option>
-      </select>
-      <select id="ls_equip" style="height:40px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;background:var(--gray-50);color:var(--black);min-width:160px;">
-        <option value="">All equipment</option>
-        <option>Dry van 53ft</option><option>Dry van 48ft</option>
-        <option>Reefer 53ft</option><option>Reefer 48ft</option>
-        <option>Flatbed</option><option>Sprinter</option>
-        <option>Reefer sprinter</option><option>Straight truck</option>
-        <option>Reefer straight truck</option><option>Power only</option>
-      </select>
-      <button id="ls_search_btn" style="height:40px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;white-space:nowrap;">Search</button>
-    </div>
-    <div style="margin-top:8px;display:flex;align-items:center;gap:10px;">
-      <span id="ls_mode_badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;"></span>
-      <span id="ls_summary_text" style="font-size:12px;color:var(--gray-400);"></span>
-    </div>
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <input id="ls_origin" type="text" placeholder="Origin city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <div style="color:var(--gray-300);font-size:16px;">→</div>
+    <input id="ls_dest" type="text" placeholder="Destination (optional)" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <select id="ls_radius" class="filter-select">
+      <option value="9999">Any distance</option>
+      <option value="50">50 mi</option>
+      <option value="100">100 mi</option>
+      <option value="150" selected>150 mi</option>
+      <option value="200">200 mi</option>
+      <option value="300">300 mi</option>
+    </select>
+    <select id="ls_equip" class="filter-select">
+      <option value="">All equipment</option>
+      <option>Dry van 53ft</option><option>Reefer 53ft</option>
+      <option>Flatbed</option><option>Sprinter</option><option>Straight truck</option>
+    </select>
+    <button id="ls_search_btn" onclick="runLaneSearch()" style="height:38px;padding:0 18px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Search</button>
   </div>
-
-  <!-- RESULTS AREA -->
-  <div id="ls_results" style="padding:20px 28px;max-width:1200px;">
-    <!-- Default state -->
-    <div id="ls_empty" style="text-align:center;padding:60px 20px;">
+  <div id="ls_mode_badge" style="display:none;margin:10px 28px 0;font-size:12px;padding:4px 12px;border-radius:20px;width:fit-content;"></div>
+  <div style="padding:16px 28px;display:flex;flex-direction:column;gap:16px;max-width:1100px;">
+    <div id="ls_placeholder" style="text-align:center;padding:60px 20px;">
       <div style="font-size:32px;margin-bottom:12px;">🔍</div>
-      <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Search for available capacity</div>
-      <div style="font-size:13px;color:var(--gray-400);">Enter an origin city above to find trucks, carrier history, and rate intel</div>
+      <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Search for available trucks by lane</div>
+      <div style="font-size:13px;color:var(--gray-400);">Enter an origin city to see trucks available nearby</div>
     </div>
-    <!-- Results grid -->
-    <div id="ls_grid" style="display:none;display:grid;grid-template-columns:1fr 280px;gap:20px;">
-
-      <!-- MAIN COL -->
-      <div style="display:flex;flex-direction:column;gap:16px;">
-
-        <!-- LIVE TRUCKS -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>
-              Live trucks nearby
-              <span id="ls_truck_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
-            </div>
-            <span style="font-size:12px;color:var(--green);cursor:pointer;" onclick="showPage('board')">View full board →</span>
-          </div>
-          <!-- Table head -->
-          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-            <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
-            <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
-            <div style="width:130px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
-            <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>
-            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>
-            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Posted</div>
-            <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
-          </div>
-          <div id="ls_truck_rows">
-            <div style="padding:24px;text-align:center;font-size:13px;color:var(--gray-400);">Search to see available trucks</div>
-          </div>
+    <!-- INBOUND TRUCKS -->
+    <div id="ls_inbound_section" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span>
+          Inbound trucks — off your loads
+          <span id="ls_inbound_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
         </div>
-
-        <!-- INBOUND TRUCKS -->
-        <div id="ls_inbound_section" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span>
-              Inbound trucks — off your loads
-              <span id="ls_inbound_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
-            </div>
-          </div>
-          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
-            <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
-            <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
-            <div style="width:130px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
-            <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Delivering to</div>
-            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>
-            <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Available</div>
-            <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Type</div>
-          </div>
-          <div id="ls_inbound_rows"></div>
-        </div>
-
-        <!-- CARRIER HISTORY -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:13px;font-weight:600;color:var(--black);display:flex;align-items:center;gap:8px;">
-              <span style="width:8px;height:8px;border-radius:50%;background:var(--blue);display:inline-block;"></span>
-              Carriers with history on this lane
-              <span id="ls_hist_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
-            </div>
-          </div>
-          <div id="ls_history_rows">
-            <div style="padding:24px 16px;display:flex;align-items:flex-start;gap:12px;">
-              <div style="font-size:20px;flex-shrink:0;">📂</div>
-              <div>
-                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Shipment history not loaded yet</div>
-                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in the Admin page to unlock carrier lane history, load counts, and average pay rates.</div>
-                <div style="margin-top:10px;">
-                  <span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Go to Admin → Upload history</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- RATE INTEL -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);">
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Rate intelligence</div>
-          </div>
-          <div id="ls_rate_content">
-            <div style="padding:24px 16px;display:flex;align-items:flex-start;gap:12px;">
-              <div style="font-size:20px;flex-shrink:0;">💰</div>
-              <div>
-                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">Rate data not loaded yet</div>
-                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Once your shipment history is uploaded, you'll see average carrier pay, customer charge, and margin for this lane.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
-
-      <!-- SIDEBAR -->
-      <div style="display:flex;flex-direction:column;gap:14px;">
-
-        <!-- SEARCH SUMMARY -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:12px;">Search summary</div>
-          <div id="ls_stats" style="display:flex;flex-direction:column;gap:8px;">
-            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Live trucks</div>
-              <div id="ls_stat_trucks" style="font-size:20px;font-weight:500;color:var(--black);">—</div>
-              <div id="ls_stat_trucks_sub" style="font-size:11px;color:var(--gray-400);margin-top:1px;"></div>
-            </div>
-            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Carriers with history</div>
-              <div style="font-size:20px;font-weight:500;color:var(--gray-300);">—</div>
-              <div style="font-size:11px;color:var(--gray-300);margin-top:1px;">Upload history to unlock</div>
-            </div>
-            <div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">
-              <div style="font-size:11px;color:var(--gray-400);margin-bottom:3px;">Historical shipments</div>
-              <div style="font-size:20px;font-weight:500;color:var(--gray-300);">—</div>
-              <div style="font-size:11px;color:var(--gray-300);margin-top:1px;">Upload history to unlock</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- COMMON EQUIPMENT -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Equipment on the board nearby</div>
-          <div id="ls_equip_tags" style="display:flex;flex-wrap:wrap;gap:6px;">
-            <div style="font-size:12px;color:var(--gray-400);">Search to see equipment nearby</div>
-          </div>
-        </div>
-
-        <!-- QUICK ACTIONS -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Quick actions</div>
-          <div style="display:flex;flex-direction:column;gap:8px;">
-            <button onclick="showPage('admin')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">📋 Add truck manually</button>
-            <button onclick="showPage('admin')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">📂 Upload carrier list</button>
-            <button onclick="showPage('board')" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;font-size:12px;color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;padding:0 12px;">🚛 View full truck board</button>
-          </div>
-        </div>
-
+      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
+        <div style="width:14px;padding:7px 8px 7px 16px;flex-shrink:0;"></div>
+        <div style="flex:1;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+        <div style="width:130px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
+        <div style="width:140px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Delivering to</div>
+        <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Distance</div>
+        <div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Available</div>
+        <div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Type</div>
+      </div>
+      <div id="ls_inbound_rows"></div>
+    </div>
+    <!-- LIVE TRUCKS -->
+    <div id="ls_results_section" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;font-weight:600;color:var(--black);">Live trucks nearby</div>
+        <span id="ls_result_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+      </div>
+      <div id="ls_results_rows"></div>
+    </div>
+    <!-- CARRIER HISTORY -->
+    <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;font-weight:600;color:var(--black);">Carriers with history on this lane</div>
+        <span id="ls_hist_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
+      </div>
+      <div id="ls_history_rows">
+        <div style="padding:20px 16px;text-align:center;font-size:13px;color:var(--gray-400);">Search a lane to see carrier history</div>
       </div>
     </div>
   </div>
 </div>
-
 
 <!-- CARRIER PROFILE PAGE -->
 <div id="carrierProfilePage" style="display:none;">
-  <div style="background:var(--gray-50);min-height:100vh;">
-
-    <!-- BREADCRUMB -->
-    <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 28px;display:flex;align-items:center;justify-content:space-between;">
-      <div style="font-size:12px;color:var(--gray-400);">
-        <span onclick="showPage('board')" style="color:var(--green);cursor:pointer;">Truck board</span>
-        <span style="margin:0 6px;">→</span>
-        <span id="cp_breadcrumb" style="color:var(--black);">Carrier profile</span>
-      </div>
-      <div id="cp_dnu_banner_small" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;">🚫 DNU — Do Not Use</div>
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:10px 28px;display:flex;align-items:center;justify-content:space-between;">
+    <div style="font-size:12px;color:var(--gray-400);">
+      <span onclick="showPage('board')" style="color:var(--green);cursor:pointer;">Truck board</span>
+      <span style="margin:0 6px;">→</span>
+      <span id="cp_breadcrumb" style="color:var(--black);">Carrier profile</span>
     </div>
-
-    <!-- DNU BANNER -->
-    <div id="cp_dnu_banner" style="display:none;margin:16px 28px 0;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-md);padding:12px 16px;display:flex;align-items:flex-start;gap:12px;">
-      <div style="font-size:16px;flex-shrink:0;">🚫</div>
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;color:var(--red-dark);margin-bottom:3px;">Do Not Use — this carrier is flagged</div>
-        <div id="cp_dnu_reason_text" style="font-size:12px;color:#791F1F;line-height:1.5;"></div>
-        <div id="cp_dnu_meta" style="font-size:11px;color:var(--red-dark);margin-top:4px;"></div>
+    <div id="cp_dnu_banner_small" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;">🚫 DNU</div>
+  </div>
+  <div style="display:grid;grid-template-columns:280px 1fr;gap:20px;padding:16px 28px;max-width:1100px;">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:20px 16px 16px;border-bottom:1px solid var(--gray-200);">
+          <div id="cp_avatar" style="width:48px;height:48px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--green-dark);margin-bottom:12px;">—</div>
+          <div id="cp_name" style="font-size:16px;font-weight:600;color:var(--black);margin-bottom:3px;"></div>
+          <div id="cp_mc" style="font-size:12px;color:var(--gray-400);font-family:'DM Mono',monospace;"></div>
+        </div>
+        <div id="cp_contact_rows"></div>
       </div>
-      <button onclick="removeDNU()" style="font-size:11px;color:var(--gray-400);background:none;border:none;cursor:pointer;text-decoration:underline;flex-shrink:0;">Remove flag</button>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Equipment runs</div>
+        <div id="cp_equip_tags" style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px;">
+          <div style="font-size:12px;color:var(--gray-400);">No equipment data yet</div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+        <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Notes</div>
+        <textarea id="cp_notes_input" style="width:100%;height:80px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;"></textarea>
+        <button onclick="saveCarrierNotes()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--green);border:none;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Save note</button>
+      </div>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
+        <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+          <span>Do Not Use</span>
+          <div id="cp_dnu_toggle" onclick="toggleDNU()" style="width:36px;height:20px;border-radius:10px;background:var(--gray-200);position:relative;cursor:pointer;">
+            <div id="cp_dnu_knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
+          </div>
+        </div>
+        <div id="cp_dnu_form" style="display:none;">
+          <textarea id="cp_dnu_reason" style="width:100%;height:70px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;" placeholder="Reason for DNU flag..."></textarea>
+          <button onclick="saveDNU()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:var(--red-dark);cursor:pointer;font-family:'DM Sans',sans-serif;">Flag as DNU</button>
+        </div>
+        <div id="cp_dnu_active_info" style="display:none;font-size:12px;color:var(--gray-400);"></div>
+      </div>
     </div>
-
-    <div style="display:grid;grid-template-columns:280px 1fr;gap:20px;padding:16px 28px;max-width:1100px;">
-
-      <!-- LEFT SIDEBAR -->
-      <div style="display:flex;flex-direction:column;gap:14px;">
-
-        <!-- CARRIER CARD -->
-        <div id="cp_contact_card" style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:20px 16px 16px;border-bottom:1px solid var(--gray-200);" id="cp_header_inner">
-            <div id="cp_avatar" style="width:48px;height:48px;border-radius:50%;background:var(--green-light);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:var(--green-dark);margin-bottom:12px;">—</div>
-            <div id="cp_name" style="font-size:16px;font-weight:600;color:var(--black);margin-bottom:3px;display:flex;align-items:center;gap:8px;"></div>
-            <div id="cp_mc" style="font-size:12px;color:var(--gray-400);font-family:'DM Mono',monospace;"></div>
-          </div>
-          <div id="cp_contact_rows"></div>
-        </div>
-
-        <!-- EQUIPMENT -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Equipment runs</div>
-          <div id="cp_equip_tags" style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px;">
-            <div style="font-size:12px;color:var(--gray-400);">No equipment data yet</div>
-          </div>
-        </div>
-
-        <!-- NOTES -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;">Notes</div>
-          <textarea id="cp_notes_input" style="width:100%;height:80px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;line-height:1.5;" placeholder="e.g. Prefers south loads, call before 3pm CST..."></textarea>
-          <button onclick="saveCarrierNotes()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--green);border:none;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Save note</button>
-        </div>
-
-        <!-- DNU TOGGLE -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow);">
-          <div style="font-size:12px;font-weight:600;color:var(--black);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
-            <span>Do Not Use</span>
-            <div id="cp_dnu_toggle" onclick="toggleDNU()" style="width:36px;height:20px;border-radius:10px;background:var(--gray-200);position:relative;cursor:pointer;flex-shrink:0;transition:background 0.2s;">
-              <div id="cp_dnu_knob" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s;"></div>
-            </div>
-          </div>
-          <div id="cp_dnu_form" style="display:none;">
-            <textarea id="cp_dnu_reason" style="width:100%;height:70px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:8px 10px;font-size:12px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);resize:none;" placeholder="Reason for DNU flag (e.g. no shows, rate disputes)..."></textarea>
-            <button onclick="saveDNU()" style="margin-top:8px;height:32px;padding:0 14px;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:var(--red-dark);cursor:pointer;font-family:'DM Sans',sans-serif;">Flag as DNU</button>
-          </div>
-          <div id="cp_dnu_active_info" style="display:none;font-size:12px;color:var(--gray-400);line-height:1.5;"></div>
-        </div>
-
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total loads</div><div id="cp_stat_loads" style="font-size:22px;font-weight:600;color:var(--black);">—</div></div>
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Avg pay/load</div><div id="cp_stat_rpm" style="font-size:22px;font-weight:600;color:var(--black);">—</div></div>
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total paid</div><div id="cp_stat_paid" style="font-size:22px;font-weight:600;color:var(--black);">—</div></div>
+        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Last load</div><div id="cp_stat_last" style="font-size:16px;font-weight:600;color:var(--black);padding-top:3px;">—</div></div>
       </div>
-
-      <!-- MAIN CONTENT -->
-      <div style="display:flex;flex-direction:column;gap:16px;">
-
-        <!-- STATS ROW -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
-          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
-            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total loads</div>
-            <div id="cp_stat_loads" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
-            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all time</div>
-          </div>
-          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
-            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Avg pay/mi</div>
-            <div id="cp_stat_rpm" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
-            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all lanes</div>
-          </div>
-          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
-            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Total paid</div>
-            <div id="cp_stat_paid" style="font-size:22px;font-weight:600;color:var(--black);">—</div>
-            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">all time</div>
-          </div>
-          <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px;box-shadow:var(--shadow);">
-            <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">Last load</div>
-            <div id="cp_stat_last" style="font-size:16px;font-weight:600;color:var(--black);padding-top:3px;">—</div>
-            <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">from history</div>
-          </div>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:13px;font-weight:600;color:var(--black);">Top lanes run</div>
+          <span id="cp_lanes_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
         </div>
-
-        <!-- TOP LANES -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Top lanes run</div>
-            <span id="cp_lanes_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span>
-          </div>
-          <div id="cp_lanes_content">
-            <div style="padding:20px 16px;display:flex;align-items:flex-start;gap:12px;">
-              <div style="font-size:20px;">📂</div>
-              <div>
-                <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No lane history loaded</div>
-                <div style="font-size:12px;color:var(--gray-400);line-height:1.6;">Upload your TMS export in Admin to see which lanes this carrier has run, load counts, and avg pay.</div>
-                <span onclick="showPage('admin')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span>
-              </div>
-            </div>
-          </div>
+        <div id="cp_lanes_content">
+          <div style="padding:20px 16px;font-size:13px;color:var(--gray-400);">Upload shipment history to see lane data</div>
         </div>
-
-        <!-- RECENT TRUCK POSTS -->
-        <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-          <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);">
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Recent truck posts</div>
-          </div>
-          <div id="cp_posts_content">
-            <div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts from this carrier</div>
-          </div>
-        </div>
-
+      </div>
+      <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);"><div style="font-size:13px;font-weight:600;color:var(--black);">Recent truck posts</div></div>
+        <div id="cp_posts_content"><div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No recent posts from this carrier</div></div>
       </div>
     </div>
   </div>
 </div>
-
 
 <!-- RATE INTELLIGENCE PAGE -->
 <div id="rateIntelPage" style="display:none;">
   <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div style="font-size:16px;font-weight:600;color:var(--black);">Rate Intelligence</div>
-      <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Search any lane to see historical pay, charge, and margin data</div>
-    </div>
+    <div><div style="font-size:16px;font-weight:600;color:var(--black);">Rate Intelligence</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Search any lane to see historical pay, charge, and margin data</div></div>
     <div id="ri_data_badge" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:1px solid var(--gray-200);">No history loaded</div>
   </div>
-
-  <!-- LANE SEARCH BAR -->
   <div style="background:var(--gray-50);border-bottom:1px solid var(--gray-200);padding:12px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
     <input id="ri_origin" type="text" placeholder="Origin city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
     <div style="color:var(--gray-300);font-size:16px;">→</div>
     <input id="ri_dest" type="text" placeholder="Destination city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
     <button id="ri_search_btn" style="height:38px;padding:0 18px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Look up lane</button>
-    <span style="font-size:12px;color:var(--gray-400);">or leave destination blank to see all lanes from an origin</span>
   </div>
-
   <div style="padding:20px 28px;max-width:1100px;">
-
-    <!-- PLACEHOLDER -->
     <div id="ri_placeholder" style="text-align:center;padding:60px 20px;">
       <div style="font-size:32px;margin-bottom:12px;">💰</div>
       <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Lane rate intelligence</div>
-      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your shipment history to unlock rate data, or search a lane above</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your shipment history to unlock rate data</div>
       <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
     </div>
-
-    <!-- RESULTS -->
     <div id="ri_results" style="display:none;flex-direction:column;gap:16px;">
-
-      <!-- RATE CARDS -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="ri_rate_cards"></div>
-
-      <!-- MARGIN BAR -->
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px 20px;box-shadow:var(--shadow);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:13px;font-weight:600;color:var(--black);">Margin health</div>
-          <div id="ri_margin_label" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div>
-        </div>
-        <div style="height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;">
-          <div id="ri_margin_bar" style="height:100%;border-radius:4px;background:var(--green);transition:width 0.4s;"></div>
-        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-size:13px;font-weight:600;color:var(--black);">Margin health</div><div id="ri_margin_label" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div></div>
+        <div style="height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;"><div id="ri_margin_bar" style="height:100%;border-radius:4px;background:var(--green);transition:width 0.4s;"></div></div>
       </div>
-
-      <!-- LANE TABLE -->
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
         <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
           <div style="font-size:13px;font-weight:600;color:var(--black);">Shipments on this lane</div>
@@ -3071,10 +2586,7 @@ Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100
 <!-- REPORTS PAGE -->
 <div id="reportsPage" style="display:none;">
   <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;">
-    <div>
-      <div style="font-size:16px;font-weight:600;color:var(--black);">Reports</div>
-      <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Performance overview across carriers, lanes, and markets</div>
-    </div>
+    <div><div style="font-size:16px;font-weight:600;color:var(--black);">Reports</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Performance overview across carriers, lanes, and markets</div></div>
     <div style="display:flex;gap:6px;">
       <span class="rp_period active" onclick="setReportPeriod(this,30)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--black);color:#fff;cursor:pointer;">30 days</span>
       <span class="rp_period" onclick="setReportPeriod(this,90)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);cursor:pointer;border:1px solid var(--gray-200);">90 days</span>
@@ -3082,40 +2594,25 @@ Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100
       <span class="rp_period" onclick="setReportPeriod(this,9999)" style="font-size:12px;padding:4px 12px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);cursor:pointer;border:1px solid var(--gray-200);">All time</span>
     </div>
   </div>
-
   <div style="padding:20px 28px;max-width:1200px;">
-
-    <!-- PLACEHOLDER -->
     <div id="rp_placeholder" style="text-align:center;padding:60px 20px;">
       <div style="font-size:32px;margin-bottom:12px;">📊</div>
       <div style="font-size:15px;font-weight:500;color:var(--black);margin-bottom:6px;">Reports powered by your shipment history</div>
-      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your TMS export to unlock carrier rankings, lane volume, margin trends, and market data</div>
+      <div style="font-size:13px;color:var(--gray-400);margin-bottom:20px;">Upload your TMS export to unlock carrier rankings, lane volume, and margin data</div>
       <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
     </div>
-
-    <!-- REPORT CONTENT -->
     <div id="rp_content" style="display:none;flex-direction:column;gap:20px;">
-
-      <!-- STATS STRIP -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;" id="rp_stats"></div>
-
-      <!-- TWO COL -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-
-        <!-- TOP CARRIERS -->
         <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
           <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Most active carriers</div>
           <div id="rp_carriers" style="padding:4px 0;"></div>
         </div>
-
-        <!-- TOP MARKETS -->
         <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
           <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Top origin markets</div>
           <div id="rp_markets" style="padding:4px 0;"></div>
         </div>
       </div>
-
-      <!-- TOP LANES -->
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
         <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Top lanes by volume</div>
         <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">
@@ -3127,17 +2624,12 @@ Contact: Mike (901) 555-0142  MC# 884421 - Midwest Freight LLC" style="width:100
         </div>
         <div id="rp_lanes"></div>
       </div>
-
-      <!-- EQUIPMENT BREAKDOWN -->
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
         <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);font-size:13px;font-weight:600;color:var(--black);">Equipment breakdown</div>
         <div id="rp_equipment" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px;"></div>
       </div>
-
     </div>
   </div>
 </div>
-
 </body>
 </html>
-<!-- ADMIN PAGE ADDITIONS - appended -->
