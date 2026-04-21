@@ -1019,7 +1019,7 @@ ${text}`
     const merged = [...existing, ...newTrucks];
     saveTrucks(merged);
     const pc2 = document.getElementById('previewCard'); if(pc2) pc2.style.display = 'none';
-    document.getElementById('pasteArea').value = '';
+    const pa = document.getElementById('pasteArea'); if(pa) pa.value = '';
     previewData = [];
     showPage('board');
     renderBoard();
