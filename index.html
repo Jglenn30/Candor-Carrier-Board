@@ -258,6 +258,7 @@
     </div>
     <button class="add-btn" onclick="openModal('truck')">+ Add truck</button>
     <button class="add-btn" style="background:#2A2A28;" onclick="openModal('users')">Manage users</button>
+    <button class="add-btn" style="background:#A32D2D;" onclick="clearAllTrucks()">Clear all trucks</button>
   </div>
 </div>
 
@@ -999,7 +1000,25 @@ ${text}`
     const maxId = existing.reduce((m, t) => Math.max(m, t.id||0), 0);
     const today = new Date().toLocaleDateString();
 
-    const newTrucks = trucks.map((t, i) => ({
+    // Deduplicate — skip trucks already on board with same carrier+city+state+equip
+    const dedupKey = t => (t.carrier+'|'+t.city+'|'+(t.state||'')+'|'+t.equip).toLowerCase().trim();
+    const existingKeys = new Set(existing.map(dedupKey));
+
+    let skipped = 0;
+    const uniqueTrucks = trucks.filter(t => {
+      const key = dedupKey(t);
+      if (existingKeys.has(key)) { skipped++; return false; }
+      existingKeys.add(key); // prevent dupes within the batch itself
+      return true;
+    });
+
+    if (!uniqueTrucks.length) {
+      showToast('All trucks already on the board — no duplicates added');
+      clearBatch();
+      return;
+    }
+
+    const newTrucks = uniqueTrucks.map((t, i) => ({
       id: maxId + i + 1,
       carrier: t.carrier || 'Unknown',
       mc: t.mc || '—',
@@ -1018,12 +1037,19 @@ ${text}`
 
     const merged = [...existing, ...newTrucks];
     saveTrucks(merged);
+
+    // Clear everything
     const pc2 = document.getElementById('previewCard'); if(pc2) pc2.style.display = 'none';
     const pa = document.getElementById('pasteArea'); if(pa) pa.value = '';
     previewData = [];
+    clearBatch();
+
     showPage('board');
     renderBoard();
-    showToast(newTrucks.length + ' truck' + (newTrucks.length !== 1 ? 's' : '') + ' added to board', 'green');
+
+    const msg = newTrucks.length + ' truck' + (newTrucks.length !== 1 ? 's' : '') + ' added'
+      + (skipped ? ' · ' + skipped + ' duplicate' + (skipped !== 1 ? 's' : '') + ' skipped' : '');
+    showToast(msg, 'green');
   }
 
 
@@ -2393,6 +2419,16 @@ ${text}`
   }
 
 
+
+
+  function clearAllTrucks() {
+    const trucks = loadTrucks();
+    if (!trucks.length) { showToast('No trucks on the board'); return; }
+    if (!confirm('Remove all ' + trucks.length + ' trucks from the board? This cannot be undone.')) return;
+    saveTrucks([]);
+    renderBoard();
+    showToast('All trucks cleared from the board');
+  }
 
   // Hook up nav links
   function initNav() {
