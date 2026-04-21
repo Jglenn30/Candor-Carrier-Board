@@ -875,19 +875,25 @@
           max_tokens: 1000,
           messages: [{
             role: 'user',
-            content: `Extract all available trucks from this carrier list. Return ONLY a JSON array with no markdown, no explanation, just the raw JSON array.
+            content: `You are parsing a freight carrier available truck list. Extract every available truck and return ONLY a valid JSON array — no markdown, no backticks, no explanation, just the raw JSON array starting with [ and ending with ].
+
+The list may be in any format including concatenated table text with no separators, emails, bullet points, or spreadsheet pastes. Common patterns:
+- "City, ST Equipment Date" all run together with no spaces between fields
+- Headers like "CITY, STATE", "TYPE OF TRUCK", "AVAILABLE DAY" mixed in — ignore these headers
+- Section labels like "Dry Options", "Reefer Options", "DMS" — use these as hints for equipment type if needed but do not include them as trucks
+- Carrier name may not be listed per row — use a reasonable name based on context or leave as "Unknown Carrier"
 
 Each truck object must have these exact keys:
-- carrier: string (company name)
-- equip: string (equipment type e.g. "Dry van 53ft", "Sprinter", "Straight truck", "Reefer 53ft")
-- city: string (city name only, no state)
-- state: string (2-letter state code)
-- phone: string (phone number or "—" if not found)
-- mc: string (MC number or "—" if not found)
-- availDate: string (available date in MM/DD/YYYY format, or "Today" if available now, or "—" if unknown)
-- notes: string (any other relevant notes or empty string)
+- carrier: string (company name, or "Unknown Carrier" if not found)
+- equip: string (normalize to one of: "Dry van 53ft", "Reefer 53ft", "Sprinter", "Sprinter Van", "Straight truck", "Box truck", "Cargo van", "Flatbed" — pick closest match)
+- city: string (city name only, no state abbreviation)
+- state: string (2-letter state code uppercase)
+- phone: string (phone number or "—")
+- mc: string (MC number or "—")
+- availDate: string (date in MM/DD/YYYY format, or "Today" if available now, or "—" if unknown)
+- notes: string (empty string if nothing extra)
 
-Carrier list:
+Carrier list to parse:
 ${text}`
           }]
         })
@@ -901,6 +907,8 @@ ${text}`
         const clean = raw.replace(/^```json\n?|^```\n?|\n?```$/g, '').trim();
         parsed = JSON.parse(clean);
       } catch(e) {
+        console.error('Parse error:', e.message, 'Raw response:', raw);
+        // Try to salvage partial JSON
         showToast('Could not parse AI response — try again');
         if (btn) { btn.innerHTML = '<span>Parse with AI</span>'; btn.disabled = false; }
         return;
@@ -1752,7 +1760,8 @@ ${text}`
             if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set()};
             carrierMap[name].loads++;
             carrierMap[name].totalPay += s.carrierCost||0;
-            if (s.equip && s.equip.trim() && s.equip.trim()!=='-') carrierMap[name].equips.add(s.equip.trim());
+            const eqVal = (s.equip||s['Equipment needed']||s['equip']||'').trim();
+            if (eqVal && eqVal!=='-') carrierMap[name].equips.add(eqVal);
             if (!carrierMap[name].lastDate || new Date(s.date)>new Date(carrierMap[name].lastDate)) carrierMap[name].lastDate=s.date;
           }
           const carriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
