@@ -2193,6 +2193,207 @@ ${text}`
 
 
 
+
+  // ── MANUAL TRUCK ENTRY ──
+  let batchTrucks = [];
+
+  function submitManualTruck(addAnother) {
+    const carrier  = (document.getElementById('tf_carrier')||{value:''}).value.trim();
+    const city     = (document.getElementById('tf_city')||{value:''}).value.trim();
+    const stateRaw = (document.getElementById('tf_state')||{value:''}).value.trim().toUpperCase();
+    const equip    = (document.getElementById('tf_equip')||{value:''}).value.trim();
+
+    if (!carrier) { showToast('Carrier name is required'); document.getElementById('tf_carrier').focus(); return; }
+    if (!city)    { showToast('City is required'); document.getElementById('tf_city').focus(); return; }
+    if (!stateRaw){ showToast('State is required'); document.getElementById('tf_state').focus(); return; }
+    if (!equip)   { showToast('Equipment is required'); document.getElementById('tf_equip').focus(); return; }
+
+    const mc       = (document.getElementById('tf_mc')||{value:'—'}).value.trim() || '—';
+    const phone    = (document.getElementById('tf_phone')||{value:'—'}).value.trim() || '—';
+    const avail    = (document.getElementById('tf_avail')||{value:'Today'}).value.trim() || 'Today';
+    const notes    = (document.getElementById('tf_notes')||{value:''}).value.trim();
+
+    if (addAnother) {
+      // Add to batch queue
+      batchTrucks.push({ carrier, mc, phone, city, state: stateRaw, equip, availDate: avail, notes });
+      renderBatchPreview();
+      // Clear form but keep carrier/mc/phone for next truck from same carrier
+      document.getElementById('tf_city').value = '';
+      document.getElementById('tf_state').value = '';
+      document.getElementById('tf_equip').value = '';
+      document.getElementById('tf_avail').value = '';
+      document.getElementById('tf_notes').value = '';
+      document.getElementById('tf_city').focus();
+      const badge = document.getElementById('admin_added_badge');
+      if (badge) { badge.style.display=''; badge.textContent = batchTrucks.length + ' queued'; }
+    } else {
+      // Add directly to board
+      addTrucksToBoard([{ carrier, mc, phone, city, state: stateRaw, equip, availDate: avail, notes }]);
+      clearTruckForm();
+      showPage('board');
+    }
+  }
+
+  function renderBatchPreview() {
+    const preview = document.getElementById('batchPreview');
+    const rows    = document.getElementById('batchRows');
+    const count   = document.getElementById('batchCount');
+    if (!preview || !rows) return;
+    if (!batchTrucks.length) { preview.style.display='none'; return; }
+    preview.style.display = '';
+    if (count) count.textContent = batchTrucks.length;
+
+    let html = '<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">'
+      + '<div style="flex:1;padding:6px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>'
+      + '<div style="width:130px;padding:6px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>'
+      + '<div style="width:130px;padding:6px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Location</div>'
+      + '<div style="width:100px;padding:6px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Available</div>'
+      + '<div style="width:36px;padding:6px 12px;flex-shrink:0;"></div>'
+      + '</div>';
+
+    batchTrucks.forEach((t, i) => {
+      html += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+        + '<div style="flex:1;padding:8px 12px;font-size:12px;font-weight:500;color:var(--black);">' + t.carrier + '</div>'
+        + '<div style="width:130px;padding:8px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.equip + '</div>'
+        + '<div style="width:130px;padding:8px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.city + ', ' + t.state + '</div>'
+        + '<div style="width:100px;padding:8px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">' + t.availDate + '</div>'
+        + '<div style="width:36px;padding:8px 10px;flex-shrink:0;"><button onclick="removeBatchRow(' + i + ')" style="font-size:12px;color:var(--gray-400);background:none;border:none;cursor:pointer;">✕</button></div>'
+        + '</div>';
+    });
+    rows.innerHTML = html;
+  }
+
+  function removeBatchRow(i) {
+    batchTrucks.splice(i, 1);
+    renderBatchPreview();
+    const badge = document.getElementById('admin_added_badge');
+    if (badge) {
+      if (batchTrucks.length) { badge.textContent = batchTrucks.length + ' queued'; }
+      else { badge.style.display = 'none'; }
+    }
+  }
+
+  function addBatchToBoard() {
+    if (!batchTrucks.length) return;
+    addTrucksToBoard(batchTrucks);
+    clearBatch();
+    showPage('board');
+  }
+
+  function clearBatch() {
+    batchTrucks = [];
+    renderBatchPreview();
+    const badge = document.getElementById('admin_added_badge');
+    if (badge) badge.style.display = 'none';
+  }
+
+  function clearTruckForm() {
+    ['tf_carrier','tf_mc','tf_phone','tf_city','tf_state','tf_avail','tf_notes'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    const eq = document.getElementById('tf_equip');
+    if (eq) eq.value = '';
+    clearBatch();
+  }
+
+
+
+
+  // ── TRUCK LIST TEMPLATE DOWNLOAD & UPLOAD ──
+
+  function downloadTruckTemplate() {
+    // Build CSV template for download (xlsx requires server, CSV works client-side)
+    const headers = ['Carrier Name','MC #','Phone','Equipment','City','State','Available Date','Notes'];
+    const samples = [
+      ['Square One Transport','123456','(800) 517-4645','Sprinter','Sterling Heights','MI','04/21/2026',''],
+      ['Square One Transport','123456','(800) 517-4645','Box truck','Wixom','MI','04/21/2026',''],
+      ['Midwest Freight LLC','884421','(901) 555-0142','Dry van 53ft','Memphis','TN','Today','Team driver'],
+    ];
+    const rows = [headers, ...samples];
+    const csv  = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = 'candor_truck_template.csv';
+    a.click(); URL.revokeObjectURL(url);
+    showToast('Template downloaded — fill it in and drop it back here', 'green');
+  }
+
+  function handleTruckListDrop(e) {
+    const file = e.dataTransfer.files[0];
+    if (file) handleTruckListFile(file);
+  }
+
+  function handleTruckListFile(file) {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.csv') && !name.endsWith('.xlsx')) {
+      showToast('Please upload a .csv or .xlsx file'); return;
+    }
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const text = e.target.result;
+        const trucks = parseTruckListCSV(text);
+        if (!trucks.length) { showToast('No trucks found in file — check the format'); return; }
+        // Show in batch preview
+        batchTrucks = trucks;
+        renderBatchPreview();
+        const badge = document.getElementById('admin_added_badge');
+        if (badge) { badge.style.display=''; badge.textContent = trucks.length + ' loaded from file'; }
+        showToast(trucks.length + ' trucks loaded — review below and hit Add all to board', 'green');
+      } catch(err) {
+        showToast('Error reading file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function parseTruckListCSV(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    // Parse header to find column indices
+    const headers = parseCSVRow(lines[0]).map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g,' ').trim());
+    const colMap  = {};
+    headers.forEach((h, i) => {
+      if (h.includes('carrier'))  colMap.carrier  = colMap.carrier  ?? i;
+      if (h.includes('mc'))       colMap.mc        = i;
+      if (h.includes('phone'))    colMap.phone     = i;
+      if (h.includes('equip'))    colMap.equip     = i;
+      if (h.includes('city'))     colMap.city      = i;
+      if (h.includes('state'))    colMap.state     = i;
+      if (h.includes('date') || h.includes('avail')) colMap.availDate = i;
+      if (h.includes('note'))     colMap.notes     = i;
+    });
+
+    const trucks = [];
+    for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      const cols    = parseCSVRow(lines[i]);
+      const carrier = (cols[colMap.carrier]||'').trim();
+      const city    = (cols[colMap.city]||'').trim();
+      const state   = (cols[colMap.state]||'').trim().toUpperCase();
+      const equip   = (cols[colMap.equip]||'').trim();
+      if (!carrier || !city || !state) continue; // skip empty/header rows
+      if (carrier.toLowerCase().includes('carrier') && city.toLowerCase().includes('city')) continue; // skip header-like rows
+      trucks.push({
+        carrier,
+        mc:        (cols[colMap.mc]||'—').trim() || '—',
+        phone:     (cols[colMap.phone]||'—').trim() || '—',
+        equip:     equip || 'Unknown',
+        city,
+        state,
+        availDate: (cols[colMap.availDate]||'Today').trim() || 'Today',
+        notes:     (cols[colMap.notes]||'').trim(),
+      });
+    }
+    return trucks;
+  }
+
+
+
   // Hook up nav links
   function initNav() {
     const links = document.querySelectorAll('.nav-link');
@@ -2225,6 +2426,10 @@ ${text}`
     const histFile = document.getElementById('historyFileInputEl') || document.getElementById('historyFileInput');
     if (histFile) histFile.addEventListener('change', e => handleHistoryFile(e.target.files[0]));
 
+    // Truck list template upload
+    const truckFile = document.getElementById('truckListFileInput');
+    if (truckFile) truckFile.addEventListener('change', e => handleTruckListFile(e.target.files[0]));
+
     // Board carrier name search
     const searchInput = document.getElementById('searchInput');
     if (searchInput) searchInput.addEventListener('input', () => renderBoard(null));
@@ -2247,6 +2452,12 @@ ${text}`
     if (riBtn)    riBtn.addEventListener('click', runRateSearch);
     if (riOrigin) riOrigin.addEventListener('keydown', e => { if(e.key==='Enter') runRateSearch(); });
     if (riDest)   riDest.addEventListener('keydown',   e => { if(e.key==='Enter') runRateSearch(); });
+
+    // Manual truck form — Enter on last field submits
+    ['tf_carrier','tf_mc','tf_phone','tf_city','tf_state','tf_avail','tf_notes'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('keydown', e => { if(e.key==='Enter') submitManualTruck(true); });
+    });
   }
 
   document.addEventListener('DOMContentLoaded', function() {
@@ -2279,62 +2490,122 @@ document.addEventListener('DOMContentLoaded', function() {
     <!-- LEFT COL -->
     <div style="display:flex;flex-direction:column;gap:16px;">
 
-      <!-- PASTE CARD -->
+      <!-- MANUAL ENTRY CARD -->
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+        <div style="padding:13px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div>
-            <div style="font-size:13px;font-weight:600;color:var(--black);">Paste carrier list</div>
-            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Any format — email, table, bullet list, copy/paste from anywhere</div>
+            <div style="font-size:13px;font-weight:600;color:var(--black);">Add trucks to board</div>
+            <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Enter one at a time, or use the spreadsheet template for lists</div>
           </div>
-          <div style="font-size:11px;padding:3px 10px;border-radius:20px;background:#EEEDFE;color:#534AB7;border:1px solid #AFA9EC;">AI-powered</div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button onclick="downloadTruckTemplate()" style="height:32px;padding:0 14px;background:var(--black);border:none;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Download template</button>
+            <span id="admin_added_badge" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--green-light);color:var(--green-dark);border:1px solid #C0DD97;"></span>
+          </div>
         </div>
-        <div style="padding:16px;">
-          <textarea id="pasteArea" placeholder="Paste carrier email or list here...&#10;&#10;Example:&#10;Hi team — Square One has available:&#10;553S  Sterling Heights MI  Sprinter Van&#10;557B  Wixom MI  Small Straight&#10;Contact: 1-800-517-4645  MC# 123456" style="width:100%;height:160px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:12px;font-size:12px;color:var(--black);font-family:'DM Mono',monospace;background:var(--gray-50);resize:none;line-height:1.6;"></textarea>
-          <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
-            <button onclick="parseWithAI()" id="aiParseBtn" style="height:38px;padding:0 20px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;display:flex;align-items:center;gap:6px;">
-              <span>Parse with AI</span>
-            </button>
-            <button onclick="document.getElementById('pasteArea').value=''" style="height:38px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Clear</button>
-            <span style="font-size:11px;color:var(--gray-400);">Copy/paste text — more accurate than screenshots</span>
+
+        <!-- SPREADSHEET UPLOAD ZONE -->
+        <div style="padding:12px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:10px;">
+          <div id="truck_upload_zone"
+               onclick="document.getElementById('truckListFileInput').click()"
+               ondragover="event.preventDefault();this.style.borderColor='var(--green)'"
+               ondragleave="this.style.borderColor='var(--gray-200)'"
+               ondrop="event.preventDefault();this.style.borderColor='var(--gray-200)';handleTruckListDrop(event)"
+               style="flex:1;border:1px dashed var(--gray-200);border-radius:var(--radius-md);padding:10px 16px;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+            <span style="font-size:16px;">📋</span>
+            <span style="font-size:12px;color:var(--gray-600);font-weight:500;">Drop filled template here to import</span>
+            <span style="font-size:11px;color:var(--gray-400);">or click to browse · accepts .csv</span>
+            <input type="file" id="truckListFileInput" accept=".csv" style="display:none;" />
           </div>
+        </div>
+
+        <!-- FORM -->
+        <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+
+          <!-- Row 1: Carrier + MC + Phone -->
+          <div style="display:grid;grid-template-columns:1fr 120px 140px;gap:10px;">
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">Carrier name *</div>
+              <input id="tf_carrier" type="text" placeholder="e.g. Midwest Freight LLC" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">MC #</div>
+              <input id="tf_mc" type="text" placeholder="e.g. 884421" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">Phone</div>
+              <input id="tf_phone" type="text" placeholder="(901) 555-0142" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+          </div>
+
+          <!-- Row 2: City + State + Equipment -->
+          <div style="display:grid;grid-template-columns:1fr 80px 1fr;gap:10px;">
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">City *</div>
+              <input id="tf_city" type="text" placeholder="e.g. Memphis" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">State *</div>
+              <input id="tf_state" type="text" placeholder="TN" maxlength="2" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);text-transform:uppercase;" />
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">Equipment *</div>
+              <select id="tf_equip" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 8px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);">
+                <option value="">Select equipment...</option>
+                <option>Dry van 53ft</option>
+                <option>Dry van 48ft</option>
+                <option>Reefer 53ft</option>
+                <option>Reefer 48ft</option>
+                <option>Flatbed</option>
+                <option>Sprinter</option>
+                <option>Sprinter Van</option>
+                <option>Reefer sprinter</option>
+                <option>Straight truck</option>
+                <option>Box truck</option>
+                <option>Cargo van</option>
+                <option>Reefer straight truck</option>
+                <option>Power only</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Row 3: Available date + Notes -->
+          <div style="display:grid;grid-template-columns:160px 1fr;gap:10px;">
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">Available date</div>
+              <input id="tf_avail" type="text" placeholder="Today or MM/DD/YYYY" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+            <div>
+              <div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;font-weight:500;">Notes</div>
+              <input id="tf_notes" type="text" placeholder="e.g. Team driver, prefers south" style="width:100%;height:34px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);padding:0 10px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--black);background:var(--gray-50);" />
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div style="display:flex;gap:8px;align-items:center;padding-top:4px;">
+            <button onclick="submitManualTruck(false)" style="height:36px;padding:0 20px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add to board</button>
+            <button onclick="submitManualTruck(true)" style="height:36px;padding:0 18px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Add &amp; enter another</button>
+            <button onclick="clearTruckForm()" style="height:36px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Clear</button>
+            <span style="font-size:11px;color:var(--gray-400);">* required</span>
+          </div>
+        </div>
+
+        <!-- BATCH PREVIEW TABLE -->
+        <div id="batchPreview" style="display:none;border-top:1px solid var(--gray-200);">
+          <div style="padding:10px 16px;background:var(--gray-50);border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:12px;font-weight:500;color:var(--black);">Trucks queued — <span id="batchCount">0</span> ready to add</div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="addBatchToBoard()" style="height:30px;padding:0 14px;background:var(--green);border:none;border-radius:var(--radius-sm);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board →</button>
+              <button onclick="clearBatch()" style="height:30px;padding:0 10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);font-size:12px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Clear all</button>
+            </div>
+          </div>
+          <div id="batchRows" style="max-height:300px;overflow-y:auto;"></div>
         </div>
       </div>
 
-      <!-- AI PREVIEW CARD -->
-      <div id="previewCard" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
-        <!-- Summary bar -->
-        <div id="previewSummary" style="padding:10px 16px;background:var(--green-light);border-bottom:1px solid #C0DD97;display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div id="previewSummaryText" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div>
-            <div style="font-size:11px;color:var(--green-dark);margin-top:1px;">Review and edit before adding. Click any field to edit.</div>
-          </div>
-        </div>
-
-        <!-- Editable table -->
-        <div style="overflow-x:auto;">
-          <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);min-width:900px;">
-            <div style="width:36px;padding:7px 10px;flex-shrink:0;"></div>
-            <div style="flex:1;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
-            <div style="width:140px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equipment</div>
-            <div style="width:130px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">City</div>
-            <div style="width:55px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">ST</div>
-            <div style="width:120px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Phone</div>
-            <div style="width:120px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avail date</div>
-            <div style="width:80px;padding:7px 10px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
-            <div style="width:36px;padding:7px 10px;flex-shrink:0;"></div>
-          </div>
-          <div id="previewRows" style="min-width:900px;"></div>
-        </div>
-
-        <!-- Actions -->
-        <div style="padding:12px 16px;display:flex;gap:8px;border-top:1px solid var(--gray-200);align-items:center;flex-wrap:wrap;">
-          <button onclick="addSelectedToBoard()" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Add all to board →</button>
-          <button onclick="addCheckedToBoard()" style="height:36px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Add selected only</button>
-          <button onclick="document.getElementById('previewCard').style.display='none'" style="height:36px;padding:0 14px;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:13px;color:var(--gray-600);cursor:pointer;background:#fff;font-family:'DM Sans',sans-serif;">Discard</button>
-          <span id="previewHint" style="font-size:11px;color:var(--gray-400);margin-left:4px;"></span>
-        </div>
+      <!-- AI PREVIEW CARD (hidden - for future AI use) -->
+      <div id="previewCard" style="display:none;">
       </div>
-    </div>
 
       <!-- RIGHT COL -->
       <div style="display:flex;flex-direction:column;gap:16px;">
