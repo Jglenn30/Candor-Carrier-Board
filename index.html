@@ -202,7 +202,7 @@
   <div class="nav-links">
     <div class="nav-link active">Truck board</div>
     <div class="nav-link disabled">Lane search</div>
-    <div class="nav-link disabled">Carriers</div>
+    <div class="nav-link" id="nav-carriers">Carriers</div>
     <div class="nav-link disabled">Rate intel</div>
     <div class="nav-link disabled">Reports</div>
     <div class="nav-link disabled">Admin</div>
@@ -538,7 +538,7 @@
 
   function openCarrierFromBoard(id) {
     const t = window._truckRegistry[id];
-    if (t) openCarrierProfile(t.carrier, t.mc, t.phone);
+    if (t) goToCarrierInDirectory(t.carrier);
   }
 
   function buildTruckGroupHtml(trucks, key) {
@@ -804,6 +804,7 @@
     _q('.chip-bar',          page==='board');
     _s('adminPage',          page==='admin');
     _s('laneSearchPage',     page==='lane');
+    _s('carriersPage',       page==='carriers');
     _s('carrierProfilePage', page==='carrier');
     _s('rateIntelPage',      page==='rate');
     _s('reportsPage',        page==='reports');
@@ -814,8 +815,9 @@
     if (page==='rate')    document.querySelectorAll('.nav-link')[3].classList.add('active');
     if (page==='reports') document.querySelectorAll('.nav-link')[4].classList.add('active');
     if (page==='admin')   document.querySelectorAll('.nav-link')[5].classList.add('active');
-    if (page==='reports') renderReports();
-    if (page==='rate')    renderReports();
+    if (page==='reports')  renderReports();
+    if (page==='rate')     renderReports();
+    if (page==='carriers') renderCarrierDirectory();
   }
 
 
@@ -1725,7 +1727,7 @@ ${text}`
           resultsRows.innerHTML = tableHead + trucks.map(t =>
             '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
             + '<div style="width:14px;padding:11px 6px 11px 16px;flex-shrink:0;"><span style="width:8px;height:8px;border-radius:50%;background:' + (group(t.posted)==='fresh'?'var(--green)':group(t.posted)==='aging'?'var(--amber)':'var(--red)') + ';display:inline-block;"></span></div>'
-            + '<div style="flex:1;padding:11px 12px;overflow:hidden;"><div style="font-size:13px;font-weight:500;color:var(--black);">' + t.carrier + '</div><div style="font-size:11px;color:var(--gray-400);">' + t.mc + ' · ' + t.phone + '</div></div>'
+            + '<div style="flex:1;padding:11px 12px;overflow:hidden;"><div class="carrier-dir-link" data-carrier="' + encodeURIComponent(t.carrier) + '" style="font-size:13px;font-weight:500;color:var(--black);cursor:pointer;">' + t.carrier + '</div><div style="font-size:11px;color:var(--gray-400);">' + t.mc + ' · ' + t.phone + '</div></div>'
             + '<div style="width:140px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + t.equip + '</div>'
             + '<div style="width:140px;padding:11px 12px;font-size:12px;font-weight:500;color:var(--black);flex-shrink:0;">' + t.city + ', ' + t.state + '</div>'
             + '<div style="width:90px;padding:11px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + (t.distance!=null?t.distance+' mi':'—') + '</div>'
@@ -2430,12 +2432,313 @@ ${text}`
     showToast('All trucks cleared from the board');
   }
 
+
+  // ── CARRIERS PAGE ──
+  let selectedCarrierId = null;
+
+  function buildCarrierDirectory() {
+    const history  = getHistory();
+    const trucks   = loadTrucks();
+    const carriers = loadCarriers();
+    const inbound  = getInboundTrucks();
+    const dirMap   = {};
+
+    // From shipment history
+    for (const s of history) {
+      const name = (s.carrier||'').split(',')[0].trim();
+      if (!name || name === '-') continue;
+      const id = carrierIdFromName(name);
+      if (!dirMap[id]) dirMap[id] = { id, name, loads:0, totalPay:0, equips:new Set(), states:new Set(), lanes:{}, lastDate:'', sources:new Set() };
+      dirMap[id].loads++;
+      dirMap[id].totalPay += s.carrierCost||0;
+      if (s.equip && s.equip.trim() && s.equip.trim()!=='-') dirMap[id].equips.add(s.equip.trim());
+      if (s.origin) { const m = s.origin.match(/,\s*([A-Z]{2})/i); if(m) dirMap[id].states.add(m[1].toUpperCase()); }
+      if (s.origin && s.dest) {
+        const lk = s.origin+'→'+s.dest;
+        if (!dirMap[id].lanes[lk]) dirMap[id].lanes[lk]={origin:s.origin,dest:s.dest,count:0,totalPay:0,lastDate:s.date};
+        dirMap[id].lanes[lk].count++;
+        dirMap[id].lanes[lk].totalPay += s.carrierCost||0;
+        if (!dirMap[id].lanes[lk].lastDate || new Date(s.date)>new Date(dirMap[id].lanes[lk].lastDate)) dirMap[id].lanes[lk].lastDate=s.date;
+      }
+      if (!dirMap[id].lastDate || new Date(s.date)>new Date(dirMap[id].lastDate)) dirMap[id].lastDate=s.date;
+      dirMap[id].sources.add('history');
+    }
+
+    // From truck board
+    for (const t of trucks) {
+      const name = (t.carrier||'').trim();
+      if (!name) continue;
+      const id = carrierIdFromName(name);
+      if (!dirMap[id]) dirMap[id] = { id, name, loads:0, totalPay:0, equips:new Set(), states:new Set(), lanes:{}, lastDate:'', sources:new Set() };
+      if (t.equip) dirMap[id].equips.add(t.equip);
+      if (t.state) dirMap[id].states.add(t.state);
+      if (!dirMap[id].mc && t.mc && t.mc !== '—') dirMap[id].mc = t.mc;
+      if (!dirMap[id].phone && t.phone && t.phone !== '—') dirMap[id].phone = t.phone;
+      dirMap[id].sources.add('board');
+      // Last seen from board post
+      const postDate = new Date(t.posted).toLocaleDateString();
+      if (!dirMap[id].lastDate || new Date(t.posted) > new Date(dirMap[id].lastDate)) dirMap[id].lastDate = postDate;
+    }
+
+    // From inbound
+    for (const t of inbound) {
+      const name = (t.carrier||'').trim();
+      if (!name) continue;
+      const id = carrierIdFromName(name);
+      if (!dirMap[id]) dirMap[id] = { id, name, loads:0, totalPay:0, equips:new Set(), states:new Set(), lanes:{}, lastDate:'', sources:new Set() };
+      dirMap[id].sources.add('inbound');
+    }
+
+    // Merge with stored carrier profiles (for DNU, notes, mc, phone)
+    for (const [id, stored] of Object.entries(carriers)) {
+      if (dirMap[id]) {
+        if (stored.mc && stored.mc !== '—') dirMap[id].mc = stored.mc;
+        if (stored.phone && stored.phone !== '—') dirMap[id].phone = stored.phone;
+        dirMap[id].dnu = stored.dnu||false;
+        dirMap[id].dnuReason = stored.dnuReason||'';
+        dirMap[id].notes = stored.notes||'';
+      }
+    }
+
+    return Object.values(dirMap);
+  }
+
+  function getCarrierStatus(carrier) {
+    if (carrier.dnu) return 'dnu';
+    const trucks = loadTrucks();
+    const onBoard = trucks.some(t => carrierIdFromName(t.carrier) === carrier.id);
+    if (onBoard) return 'onboard';
+    return 'active';
+  }
+
+  function relativeDate(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const days = Math.floor((Date.now() - d) / 86400000);
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return days + ' days ago';
+    if (days < 30) return Math.floor(days/7) + ' weeks ago';
+    if (days < 365) return Math.floor(days/30) + ' months ago';
+    return Math.floor(days/365) + 'yr ago';
+  }
+
+  function renderCarrierDirectory() {
+    const searchVal  = (document.getElementById('carrier_search')||{value:''}).value.toLowerCase().trim();
+    const equipFilt  = (document.getElementById('carrier_equip_filter')||{value:''}).value.toLowerCase();
+    const statusFilt = (document.getElementById('carrier_status_filter')||{value:''}).value;
+    const sortVal    = (document.getElementById('carrier_sort')||{value:'loads'}).value;
+
+    let carriers = buildCarrierDirectory();
+
+    // Filters
+    if (searchVal) carriers = carriers.filter(c => c.name.toLowerCase().includes(searchVal));
+    if (equipFilt) carriers = carriers.filter(c => [...c.equips].some(e => e.toLowerCase().includes(equipFilt)));
+    if (statusFilt) carriers = carriers.filter(c => getCarrierStatus(c) === statusFilt);
+
+    // Sort
+    if (sortVal === 'loads')  carriers.sort((a,b) => b.loads - a.loads);
+    if (sortVal === 'recent') carriers.sort((a,b) => new Date(b.lastDate||0) - new Date(a.lastDate||0));
+    if (sortVal === 'alpha')  carriers.sort((a,b) => a.name.localeCompare(b.name));
+
+    // Update pills
+    const allCarriers = buildCarrierDirectory();
+    const dnuCount = allCarriers.filter(c => c.dnu).length;
+    const totalPill = document.getElementById('carrier_total_pill');
+    const dnuPill   = document.getElementById('carrier_dnu_pill');
+    if (totalPill) totalPill.textContent = allCarriers.length + ' carriers';
+    if (dnuPill) {
+      if (dnuCount > 0) { dnuPill.style.display=''; dnuPill.textContent = dnuCount + ' DNU'; }
+      else { dnuPill.style.display='none'; }
+    }
+
+    const rowsEl   = document.getElementById('carrier_list_rows');
+    const footerEl = document.getElementById('carrier_list_footer');
+    if (!rowsEl) return;
+
+    if (!carriers.length) {
+      rowsEl.innerHTML = '<div style="padding:40px;text-align:center;color:var(--gray-400);font-size:13px;">' +
+        (allCarriers.length === 0 ? 'Upload your shipment history in Admin to populate the carrier directory.' : 'No carriers match your filters.') +
+        '</div>';
+      if (footerEl) footerEl.style.display = 'none';
+      return;
+    }
+
+    let html = '';
+    for (const c of carriers) {
+      const status   = getCarrierStatus(c);
+      const initials = c.name.split(/\s+/).map(w=>w[0]).join('').substring(0,2).toUpperCase();
+      const avatarBg = c.dnu ? 'background:#FCEBEB;color:#791F1F;' : 'background:var(--green-light);color:var(--green-dark);';
+      const isSelected = c.id === selectedCarrierId;
+      const equipsStr = [...c.equips].slice(0,2).join(', ') || '—';
+      const statesStr = [...c.states].slice(0,3).join(', ') || '';
+
+      let statusBadge = '';
+      if (status === 'dnu')     statusBadge = '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;">DNU</span>';
+      else if (status === 'onboard') statusBadge = '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">On board</span>';
+      else statusBadge = '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">Active</span>';
+
+            html += '<div data-cid="' + c.id + '" class="carrier-dir-row" style="display:flex;align-items:center;background:' + (isSelected?'var(--green-light)':'#fff') + ';border-bottom:1px solid var(--gray-100);cursor:pointer;">';
+      html += '<div style="width:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;' + avatarBg + '">' + initials + '</div></div>';
+      html += '<div style="flex:1;padding:10px 12px 10px 0;min-width:0;">';
+      html += '<div style="font-size:12px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + c.name + '</div>';
+      html += '<div style="font-size:10px;color:var(--gray-400);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + equipsStr + (statesStr?' · '+statesStr:'') + '</div>';
+      html += '</div>';
+      html += '<div style="width:75px;padding:0 12px;font-size:11px;color:var(--gray-600);flex-shrink:0;">' + (c.loads||0) + ' loads</div>';
+      html += '<div style="width:90px;padding:0 12px;font-size:11px;color:var(--gray-400);flex-shrink:0;">' + relativeDate(c.lastDate) + '</div>';
+      html += '<div style="width:85px;padding:0 12px;flex-shrink:0;">' + statusBadge + '</div>';
+      html += '</div>';
+    }
+    rowsEl.innerHTML = html;
+
+    if (footerEl) {
+      footerEl.style.display = '';
+      footerEl.textContent = 'Showing ' + carriers.length + ' of ' + allCarriers.length + ' carriers';
+    }
+  }
+
+  function selectCarrier(id) {
+    selectedCarrierId = id;
+    renderCarrierDirectory();
+    renderCarrierProfilePanel(id);
+  }
+
+  function renderCarrierProfilePanel(id) {
+    const panel = document.getElementById('carrier_profile_panel');
+    if (!panel) return;
+
+    const allCarriers = buildCarrierDirectory();
+    const c = allCarriers.find(x => x.id === id);
+    if (!c) return;
+
+    const stored  = loadCarriers()[id] || {};
+    const initials = c.name.split(/\s+/).map(w=>w[0]).join('').substring(0,2).toUpperCase();
+    const mc    = c.mc || stored.mc || '—';
+    const phone = c.phone || stored.phone || '—';
+    const avatarBg = c.dnu ? 'background:#FCEBEB;color:#791F1F;' : 'background:var(--green-light);color:var(--green-dark);';
+
+    // Lanes sorted by count
+    const lanes = Object.values(c.lanes).sort((a,b)=>b.count-a.count);
+
+    let html = '';
+
+    // Header
+    html += '<div style="padding:14px 16px;border-bottom:1px solid var(--gray-200);display:flex;align-items:flex-start;gap:10px;">';
+    html += '<div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex-shrink:0;' + avatarBg + '">' + initials + '</div>';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:14px;font-weight:600;color:var(--black);">' + c.name + (c.dnu?'<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:#F09595;color:#501313;font-weight:500;margin-left:6px;">DNU</span>':'') + '</div>';
+    html += '<div style="font-size:11px;color:var(--gray-400);font-family:monospace;margin-top:2px;">MC# ' + mc + ' · <a href="tel:' + phone + '" style="color:var(--blue);">' + phone + '</a></div>';
+    html += '</div>';
+        html += '<button data-cid="' + id + '" class="carrier-full-profile-btn" style="font-size:11px;padding:4px 10px;border:1px solid var(--gray-200);border-radius:var(--radius-sm);background:#fff;color:var(--gray-600);cursor:pointer;white-space:nowrap;">Full profile</button>';
+    html += '</div>';
+
+    // Stats
+    const avgPay = c.loads > 0 ? '$'+(c.totalPay/c.loads).toFixed(0)+'/load' : '—';
+    const totalPaid = c.totalPay > 0 ? '$'+Math.round(c.totalPay/1000)+'k' : '—';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px;">';
+    for (const [label,val] of [['Total loads',c.loads||'0'],['Avg pay/load',avgPay],['Total paid',totalPaid],['Last load',c.lastDate||'—']]) {
+      html += '<div style="background:var(--gray-50);border-radius:var(--radius-sm);padding:10px 12px;">';
+      html += '<div style="font-size:10px;color:var(--gray-400);margin-bottom:3px;">' + label + '</div>';
+      html += '<div style="font-size:' + (label==='Last load'?'12':'18') + 'px;font-weight:600;color:var(--black);">' + val + '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Equipment
+    if (c.equips.size > 0) {
+      html += '<div style="font-size:11px;font-weight:600;color:var(--black);padding:10px 12px 6px;border-top:1px solid var(--gray-200);">Equipment</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:4px;padding:0 12px 12px;">';
+      for (const e of c.equips) {
+        html += '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);">' + e + '</span>';
+      }
+      html += '</div>';
+    }
+
+    // Sources
+    html += '<div style="display:flex;gap:4px;padding:0 12px 12px;">';
+    if (c.sources.has('history')) html += '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);">Shipment history</span>';
+    if (c.sources.has('board'))   html += '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);">Board post</span>';
+    if (c.sources.has('inbound')) html += '<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);">Inbound</span>';
+    html += '</div>';
+
+    // All Lanes
+    if (lanes.length) {
+      html += '<div style="font-size:11px;font-weight:600;color:var(--black);padding:10px 12px 6px;border-top:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;">';
+      html += '<span>Lanes run</span><span style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-400);">' + lanes.length + '</span></div>';
+      html += '<div style="border-top:1px solid var(--gray-200);">';
+      html += '<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);">';
+      html += '<div style="flex:1;padding:5px 12px;font-size:9px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Lane</div>';
+      html += '<div style="width:55px;padding:5px 8px;font-size:9px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>';
+      html += '<div style="width:75px;padding:5px 8px;font-size:9px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div>';
+      html += '</div>';
+      for (const l of lanes) {
+        const origin = (l.origin||'').replace(/, US$/i,'').trim();
+        const dest   = (l.dest||'').replace(/, US$/i,'').trim();
+        html += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">';
+        html += '<div style="flex:1;padding:7px 12px;font-size:11px;color:var(--black);min-width:0;"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + origin + '</div><div style="font-size:10px;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">→ ' + dest + '</div></div>';
+        html += '<div style="width:55px;padding:7px 8px;font-size:11px;color:var(--gray-600);flex-shrink:0;">' + l.count + '</div>';
+        html += '<div style="width:75px;padding:7px 8px;font-size:11px;color:var(--gray-600);flex-shrink:0;">' + (l.count>0?'$'+(l.totalPay/l.count).toFixed(0):'—') + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div style="padding:16px;text-align:center;font-size:12px;color:var(--gray-400);border-top:1px solid var(--gray-200);">No lane history — upload shipment history in Admin</div>';
+    }
+
+    // DNU info if flagged
+    if (c.dnu && stored.dnuReason) {
+      html += '<div style="margin:12px;padding:12px;background:var(--red-light);border:1px solid #F09595;border-radius:var(--radius-md);">';
+      html += '<div style="font-size:11px;font-weight:600;color:var(--red-dark);margin-bottom:3px;">Do Not Use</div>';
+      html += '<div style="font-size:11px;color:var(--red-dark);">' + stored.dnuReason + '</div>';
+      if (stored.dnuBy) html += '<div style="font-size:10px;color:var(--red-dark);margin-top:4px;">Flagged by ' + stored.dnuBy + ' · ' + (stored.dnuDate||'') + '</div>';
+      html += '</div>';
+    }
+
+    // Notes
+    if (stored.notes) {
+      html += '<div style="margin:0 12px 12px;padding:10px 12px;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:var(--radius-sm);">';
+      html += '<div style="font-size:10px;font-weight:600;color:var(--gray-600);margin-bottom:4px;">Notes</div>';
+      html += '<div style="font-size:11px;color:var(--black);line-height:1.6;">' + stored.notes + '</div>';
+      html += '</div>';
+    }
+
+    html += '<div style="height:40px;"></div>';
+    panel.innerHTML = html;
+  }
+
+  function openCarrierFromDirectory(id) {
+    const allCarriers = buildCarrierDirectory();
+    const c = allCarriers.find(x => x.id === id);
+    if (c) openCarrierProfile(c.name, c.mc||'—', c.phone||'—');
+  }
+
+  function goToCarrierInDirectory(carrierName) {
+    const id = carrierIdFromName(carrierName);
+    showPage('carriers');
+    selectedCarrierId = id;
+    setTimeout(() => {
+      renderCarrierDirectory();
+      renderCarrierProfilePanel(id);
+      // Scroll to selected row
+      const rows = document.querySelectorAll('#carrier_list_rows > div');
+      for (const row of rows) {
+        if (row.onclick && row.onclick.toString().includes(id)) {
+          row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          break;
+        }
+      }
+    }, 50);
+  }
+
+
+
   // Hook up nav links
   function initNav() {
     const links = document.querySelectorAll('.nav-link');
     links[0].onclick = () => { showPage('board'); };
     links[1].onclick = () => { showPage('lane'); };
-    links[2].onclick = () => { showPage('board'); showToast('Click any carrier name on the board to view their profile'); };
+    links[2].onclick = () => { showPage('carriers'); renderCarrierDirectory(); };
     links[3].onclick = () => { showPage('rate'); };
     links[4].onclick = () => { showPage('reports'); };
     links[5].onclick = () => { showPage('admin'); updateHistoryStats(); };
@@ -2480,6 +2783,31 @@ ${text}`
     if (boardRadius) boardRadius.addEventListener('change',  () => { if(boardCity&&boardCity.value.trim()) runBoardSearch(); else renderBoard(null); });
     if (equipFilter) equipFilter.addEventListener('change',  () => renderBoard(null));
     if (statusFilter)statusFilter.addEventListener('change', () => renderBoard(null));
+
+    // Delegate all carrier page clicks
+    document.addEventListener('click', e => {
+      const link = e.target.closest('.carrier-dir-link');
+      if (link) { goToCarrierInDirectory(decodeURIComponent(link.dataset.carrier||'')); return; }
+      const row = e.target.closest('.carrier-dir-row');
+      if (row && row.dataset.cid) { selectCarrier(row.dataset.cid); return; }
+      const fpBtn = e.target.closest('.carrier-full-profile-btn');
+      if (fpBtn && fpBtn.dataset.cid) {
+        const all = buildCarrierDirectory();
+        const c = all.find(x => x.id === fpBtn.dataset.cid);
+        if (c) openCarrierProfile(c.name, c.mc||'—', c.phone||'—');
+        return;
+      }
+    });
+
+    // Carrier directory filters
+    const cSearch = document.getElementById('carrier_search');
+    const cEquip  = document.getElementById('carrier_equip_filter');
+    const cStatus = document.getElementById('carrier_status_filter');
+    const cSort   = document.getElementById('carrier_sort');
+    if (cSearch) cSearch.addEventListener('input',  () => renderCarrierDirectory());
+    if (cEquip)  cEquip.addEventListener('change',  () => renderCarrierDirectory());
+    if (cStatus) cStatus.addEventListener('change', () => renderCarrierDirectory());
+    if (cSort)   cSort.addEventListener('change',   () => renderCarrierDirectory());
 
     // Rate intel search
     const riBtn    = document.getElementById('ri_search_btn');
@@ -2715,6 +3043,79 @@ document.addEventListener('DOMContentLoaded', function() {
 
       </div>
     </div>
+  </div>
+</div>
+
+
+<!-- CARRIERS PAGE -->
+<div id="carriersPage" style="display:none;">
+
+  <!-- HEADER -->
+  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div>
+      <div style="font-size:15px;font-weight:600;color:var(--black);">Carrier directory</div>
+      <div style="font-size:11px;color:var(--gray-400);margin-top:2px;">All carriers from your shipment history, board posts, and truck list uploads</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="carrier_total_pill" style="font-size:11px;padding:3px 10px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">0 carriers</span>
+      <span id="carrier_dnu_pill" style="display:none;font-size:11px;padding:3px 10px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;"></span>
+    </div>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div style="background:var(--gray-50);border-bottom:1px solid var(--gray-200);padding:10px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 10px;height:32px;flex:1;max-width:260px;">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="var(--gray-400)" stroke-width="1.5"/><path d="M11 11l3 3" stroke="var(--gray-400)" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <input id="carrier_search" type="text" placeholder="Search carriers..." style="border:none;outline:none;font-size:11px;color:var(--black);background:transparent;width:100%;font-family:'DM Sans',sans-serif;" />
+    </div>
+    <select id="carrier_equip_filter" class="filter-select" style="height:32px;font-size:11px;">
+      <option value="">All equipment</option>
+      <option>Dry van 53ft</option><option>Reefer 53ft</option><option>Sprinter</option>
+      <option>Straight truck</option><option>Box truck</option><option>Flatbed</option><option>Cargo van</option>
+    </select>
+    <select id="carrier_status_filter" class="filter-select" style="height:32px;font-size:11px;">
+      <option value="">All statuses</option>
+      <option value="active">Active</option>
+      <option value="onboard">On board</option>
+      <option value="dnu">DNU</option>
+    </select>
+    <select id="carrier_sort" class="filter-select" style="height:32px;font-size:11px;">
+      <option value="loads">Sort: Most loads</option>
+      <option value="recent">Sort: Most recent</option>
+      <option value="alpha">Sort: A–Z</option>
+    </select>
+  </div>
+
+  <!-- BODY: split layout -->
+  <div style="display:grid;grid-template-columns:1fr 320px;height:calc(100vh - 140px);">
+
+    <!-- LEFT: carrier list -->
+    <div style="border-right:1px solid var(--gray-200);overflow-y:auto;">
+      <!-- Table head -->
+      <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);position:sticky;top:0;z-index:2;">
+        <div style="width:52px;flex-shrink:0;"></div>
+        <div style="flex:1;padding:7px 12px;font-size:10px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div>
+        <div style="width:75px;padding:7px 12px;font-size:10px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div>
+        <div style="width:90px;padding:7px 12px;font-size:10px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last seen</div>
+        <div style="width:85px;padding:7px 12px;font-size:10px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Status</div>
+      </div>
+      <div id="carrier_list_rows">
+        <div style="padding:40px;text-align:center;color:var(--gray-400);font-size:13px;">
+          Upload your shipment history in Admin to populate the carrier directory.
+        </div>
+      </div>
+      <div id="carrier_list_footer" style="padding:10px 16px;font-size:11px;color:var(--gray-400);text-align:center;background:var(--gray-50);border-top:1px solid var(--gray-200);display:none;"></div>
+    </div>
+
+    <!-- RIGHT: carrier profile panel -->
+    <div id="carrier_profile_panel" style="overflow-y:auto;background:#fff;">
+      <div style="padding:40px 20px;text-align:center;color:var(--gray-400);">
+        <div style="font-size:32px;margin-bottom:12px;">👆</div>
+        <div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:4px;">Select a carrier</div>
+        <div style="font-size:12px;">Click any carrier on the left to view their profile</div>
+      </div>
+    </div>
+
   </div>
 </div>
 
