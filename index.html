@@ -609,6 +609,9 @@
           const dist = Math.round(haversine(boardCoords[0],boardCoords[1],tc[0],tc[1]));
           if (boardRadius !== 9999 && dist > boardRadius) return false;
           t._boardDist = dist;
+        } else {
+          // Truck city not in coordinate table — exclude unless same state or any distance
+          if (boardRadius !== 9999 && t.state !== (document.getElementById('boardCityInput').value.match(/,\s*([A-Z]{2})/i)||[])[1]) return false;
         }
       }
       return true;
@@ -1798,12 +1801,20 @@ ${text}`
           const carrierMap = {};
           for (const s of matches) {
             const name = (s.carrier||'Unknown').split(',')[0].trim();
-            if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set()};
+            if (!carrierMap[name]) carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set(),origins:{}};
             carrierMap[name].loads++;
             carrierMap[name].totalPay += s.carrierCost||0;
             const eqVal = (s.equip||s['Equipment needed']||s['equip']||'').trim();
             if (eqVal && eqVal!=='-') carrierMap[name].equips.add(eqVal);
             if (!carrierMap[name].lastDate || new Date(s.date)>new Date(carrierMap[name].lastDate)) carrierMap[name].lastDate=s.date;
+            // Track most common pickup origin
+            const orig = (s.origin||'').trim();
+            if (orig) carrierMap[name].origins[orig] = (carrierMap[name].origins[orig]||0) + 1;
+          }
+          // Find top origin for each carrier
+          for (const d of Object.values(carrierMap)) {
+            const entries = Object.entries(d.origins||{});
+            if (entries.length) d.topOrigin = entries.sort((a,b)=>b[1]-a[1])[0][0];
           }
           const carriers = Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
           if (histCountEl) histCountEl.textContent = carriers.length+' carriers';
@@ -1818,8 +1829,14 @@ ${text}`
             const equipTags = [...(d.equips||new Set())].slice(0,3).map(e =>
               '<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);display:inline-block;margin:1px;">' + e + '</span>'
             ).join('');
+
+            // Most common pickup origin for this carrier
+            const topOrigin = d.topOrigin ? d.topOrigin.replace(/, US$/i,'').trim() : '';
+
             carrierRowsHtml += '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">';
-            carrierRowsHtml += '<div style="flex:1;padding:10px 16px;min-width:0;"><div style="font-size:13px;font-weight:500;color:var(--black);">' + name + '</div>';
+            carrierRowsHtml += '<div style="flex:1;padding:10px 16px;min-width:0;">';
+            carrierRowsHtml += '<div class="carrier-dir-link" data-carrier="' + encodeURIComponent(name) + '" style="font-size:13px;font-weight:500;color:var(--black);cursor:pointer;">' + name + '</div>';
+            if (topOrigin) carrierRowsHtml += '<div style="font-size:11px;color:var(--gray-400);margin-top:2px;">Most common pickup: ' + topOrigin + '</div>';
             if (equipTags) carrierRowsHtml += '<div style="margin-top:4px;">' + equipTags + '</div>';
             carrierRowsHtml += '</div>';
             carrierRowsHtml += '<div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">' + d.loads + ' loads</div>';
@@ -2222,7 +2239,10 @@ ${text}`
         if (tc) {
           distance = Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));
           include = (radius === 9999 || distance <= radius);
-        } else { include = true; }
+        } else {
+          // City not in table — only include if same state or any-distance search
+          include = radius === 9999 || t.state === originSt;
+        }
       } else {
         include = !originSt || t.state === originSt;
       }
