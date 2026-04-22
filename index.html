@@ -234,6 +234,8 @@
     <option value="200">200 mi</option>
     <option value="300">300 mi</option>
   </select>
+  <button id="boardSearchBtn" onclick="runBoardSearch()" style="height:36px;padding:0 14px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:12px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Search</button>
+  <button id="boardClearBtn" onclick="document.getElementById('boardCityInput').value='';renderBoard(null);" style="height:36px;padding:0 10px;background:none;border:1px solid var(--gray-200);border-radius:var(--radius-md);font-size:12px;color:var(--gray-400);cursor:pointer;font-family:'DM Sans',sans-serif;display:none;">✕</button>
   <select class="filter-select" id="equipFilter">
     <option value="">All equipment</option>
     <option>Dry van 53ft</option><option>Dry van 48ft</option>
@@ -573,7 +575,7 @@
       html += '<div class="carrier-mc">' + t.mc + ' &middot; <span class="cell-phone">' + t.phone + '</span></div>';
       html += '</div>';
       html += '<div class="td td-equip">' + t.equip + '</div>';
-      html += '<div class="td td-location">' + t.city + ', ' + t.state + '</div>';
+      html += '<div class="td td-location">' + t.city + ', ' + t.state + (t._boardDist != null ? '<div style="font-size:10px;color:var(--gray-400);">' + t._boardDist + ' mi</div>' : '') + '</div>';
       html += '<div class="td td-posted"><span class="' + ageClass(t.posted) + '">' + ageLabel(t.posted) + '</span></div>';
       html += '<div class="td td-status"><span class="badge ' + (t.status === 'Available' ? 'badge-avail' : 'badge-contact') + '">' + t.status + '</span></div>';
       html += '<div class="td td-claimed"><div class="row-actions">' + claimHtml + '</div></div>';
@@ -1614,13 +1616,24 @@ ${text}`
     const cityVal = cityInput ? cityInput.value.trim() : '';
     if (!cityVal) { renderBoard(null); return; }
 
-    // Try cache first
+    const btn = document.getElementById('boardSearchBtn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+
+    // Try built-in table first, then live geocoding
     const parts = cityVal.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
     const city  = parts ? parts[1].trim() : cityVal;
     const state = parts ? parts[2].trim().toUpperCase() : '';
     let coords = getCityCoords(city, state);
+    if (!coords) coords = GEO_CACHE[cityVal.toLowerCase()];
     if (!coords) coords = await geocode(cityVal);
-    if (!coords) { showToast('"'+cityVal+'" not found — check city and state'); renderBoard(null); return; }
+
+    if (btn) { btn.textContent = 'Search'; btn.disabled = false; }
+
+    if (!coords) {
+      showToast('"'+cityVal+'" not found — try adding state (e.g. Dallas, TX)');
+      renderBoard(null);
+      return;
+    }
 
     // Geocode all truck locations
     const trucks = loadTrucks();
@@ -2779,7 +2792,11 @@ ${text}`
     const equipFilter = document.getElementById('equipFilter');
     const statusFilter= document.getElementById('statusFilter');
     if (boardCity)   boardCity.addEventListener('keydown',   e => { if(e.key==='Enter') runBoardSearch(); });
-    if (boardCity)   boardCity.addEventListener('input',     () => { if(!boardCity.value.trim()) renderBoard(null); });
+    if (boardCity)   boardCity.addEventListener('input', () => {
+      const clearBtn = document.getElementById('boardClearBtn');
+      if (clearBtn) clearBtn.style.display = boardCity.value.trim() ? '' : 'none';
+      if (!boardCity.value.trim()) renderBoard(null);
+    });
     if (boardRadius) boardRadius.addEventListener('change',  () => { if(boardCity&&boardCity.value.trim()) runBoardSearch(); else renderBoard(null); });
     if (equipFilter) equipFilter.addEventListener('change',  () => renderBoard(null));
     if (statusFilter)statusFilter.addEventListener('change', () => renderBoard(null));
