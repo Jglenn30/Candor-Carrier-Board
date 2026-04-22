@@ -200,12 +200,12 @@
 <nav class="nav">
   <div class="nav-logo">CAN<span>·</span>DOR</div>
   <div class="nav-links">
-    <div class="nav-link active">Truck board</div>
-    <div class="nav-link disabled">Lane search</div>
-    <div class="nav-link" id="nav-carriers">Carriers</div>
-    <div class="nav-link disabled">Rate intel</div>
-    <div class="nav-link disabled">Reports</div>
-    <div class="nav-link disabled">Admin</div>
+    <div class="nav-link">Lane search</div>
+    <div class="nav-link">Truck board</div>
+    <div class="nav-link">Carriers</div>
+    <div class="nav-link">Rate intel</div>
+    <div class="nav-link">Reports</div>
+    <div class="nav-link">Admin</div>
   </div>
   <div class="nav-user">
     <div class="nav-avatar" id="navAvatar">—</div>
@@ -433,7 +433,9 @@
     localStorage.setItem(USER_KEY, name);
     document.getElementById('loginScreen').classList.add('hidden');
     setNavUser(name);
-    renderBoard();
+    showPage('lane');
+    updateHistoryStats();
+    setTimeout(preCacheHistoryOrigins, 2000);
   }
   function setNavUser(name) {
     const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
@@ -763,7 +765,7 @@
       currentUser = saved;
       document.getElementById('loginScreen').classList.add('hidden');
       setNavUser(saved);
-      renderBoard();
+      showPage('lane');
     }
     setInterval(renderBoard, 60000);
     // Pre-cache history origins in background for fast lane search
@@ -814,12 +816,9 @@
     _s('rateIntelPage',      page==='rate');
     _s('reportsPage',        page==='reports');
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    if (page==='board')   document.querySelectorAll('.nav-link')[0].classList.add('active');
-    if (page==='lane')    document.querySelectorAll('.nav-link')[1].classList.add('active');
-    if (page==='carrier') document.querySelectorAll('.nav-link')[2].classList.add('active');
-    if (page==='rate')    document.querySelectorAll('.nav-link')[3].classList.add('active');
-    if (page==='reports') document.querySelectorAll('.nav-link')[4].classList.add('active');
-    if (page==='admin')   document.querySelectorAll('.nav-link')[5].classList.add('active');
+    const navMap = { lane:0, board:1, carriers:2, carrier:2, rate:3, reports:4, admin:5 };
+    const navIdx = navMap[page];
+    if (navIdx !== undefined) document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
     if (page==='reports')  renderReports();
     if (page==='rate')     renderReports();
     if (page==='carriers') renderCarrierDirectory();
@@ -3024,8 +3023,8 @@ ${text}`
   // Hook up nav links
   function initNav() {
     const links = document.querySelectorAll('.nav-link');
-    links[0].onclick = () => { showPage('board'); };
-    links[1].onclick = () => { showPage('lane'); };
+    links[0].onclick = () => { showPage('lane'); };
+    links[1].onclick = () => { showPage('board'); };
     links[2].onclick = () => { showPage('carriers'); renderCarrierDirectory(); };
     links[3].onclick = () => { showPage('rate'); };
     links[4].onclick = () => { showPage('reports'); };
