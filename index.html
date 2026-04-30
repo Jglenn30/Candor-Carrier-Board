@@ -180,9 +180,6 @@
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.green { background: var(--green-dark); }
 </style>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
 </head>
 <body>
 
@@ -208,7 +205,6 @@
     <div class="nav-link">Carriers</div>
     <div class="nav-link">Rate intel</div>
     <div class="nav-link">Reports</div>
-    <div class="nav-link">Heat map</div>
     <div class="nav-link">Admin</div>
   </div>
   <div class="nav-user">
@@ -623,7 +619,7 @@
       return true;
     });
 
-    document.getElementById('totalCount').textContent = filtered.filter(t=>group(t.posted)==='fresh').length;
+    document.getElementById('totalCount').textContent = filtered.length;
     const staleEl = document.getElementById('staleCount'); if(staleEl) staleEl.textContent = filtered.filter(t=>group(t.posted)==='stale').length;
     const inboundEl = document.getElementById('inboundCount');
     if (inboundEl) inboundEl.textContent = getInboundTrucks().length;
@@ -819,15 +815,12 @@
     _s('carrierProfilePage', page==='carrier');
     _s('rateIntelPage',      page==='rate');
     _s('reportsPage',        page==='reports');
-    _s('heatmapPage',         page==='heatmap');
-    if (page==='heatmap') { const hm = document.getElementById('heatmapPage'); if(hm) hm.style.display='flex'; }
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-    const navMap = { lane:0, board:1, carriers:2, carrier:2, rate:3, reports:4, heatmap:5, admin:6 };
+    const navMap = { lane:0, board:1, carriers:2, carrier:2, rate:3, reports:4, admin:5 };
     const navIdx = navMap[page];
     if (navIdx !== undefined) document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
     if (page==='reports')  renderReports();
     if (page==='rate')     renderReports();
-    if (page==='heatmap')  renderHeatmap();
     if (page==='carriers') renderCarrierDirectory();
   }
 
@@ -1864,15 +1857,6 @@ ${text}`
   async function geocode(cityState) {
     const key = cityState.toLowerCase().trim();
     if (GEO_CACHE[key]) return GEO_CACHE[key];
-
-    // Check local CC table first (instant, no network)
-    const parts = key.replace(/,/g,'').replace(/\s+/g,' ').trim().split(' ');
-    if (parts.length >= 2) {
-      const state = parts[parts.length-1];
-      const city = parts.slice(0, parts.length-1).join(' ');
-      const localCoords = getCityCoords(city, state);
-      if (localCoords) { GEO_CACHE[key] = localCoords; return localCoords; }
-    }
 
     // Try Nominatim first with proper browser headers
     try {
@@ -3044,8 +3028,7 @@ ${text}`
     links[2].onclick = () => { showPage('carriers'); renderCarrierDirectory(); };
     links[3].onclick = () => { showPage('rate'); };
     links[4].onclick = () => { showPage('reports'); };
-    links[5].onclick = () => { showPage('heatmap'); };
-    links[6].onclick = () => { showPage('admin'); updateHistoryStats(); };
+    links[5].onclick = () => { showPage('admin'); updateHistoryStats(); };
 
     // Lane search — attach all handlers after JS is fully loaded
     const lsOrigin  = document.getElementById('ls_origin');
@@ -3656,241 +3639,5 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
   </div>
 </div>
-
-<div id="heatmapPage" style="display:none;flex-direction:column;">
-  <!-- Header controls -->
-  <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0;">
-    <div>
-      <div style="font-size:15px;font-weight:600;color:var(--black);">Lane Heat Map</div>
-      <div style="font-size:11px;color:var(--gray-400);margin-top:1px;">Pickup &amp; delivery density by location</div>
-    </div>
-    <div style="display:flex;gap:6px;margin-left:8px;">
-      <!-- Layer toggles -->
-      <button id="hm_pickup_btn" onclick="hmToggleLayer('pickup')" style="font-size:12px;padding:5px 13px;border-radius:20px;border:1.5px solid #43a047;background:#e8f5e9;color:#2e7d32;cursor:pointer;font-weight:500;font-family:'DM Sans',sans-serif;">● Pickups</button>
-      <button id="hm_delivery_btn" onclick="hmToggleLayer('delivery')" style="font-size:12px;padding:5px 13px;border-radius:20px;border:1.5px solid #1e88e5;background:#e3f2fd;color:#1565c0;cursor:pointer;font-weight:500;font-family:'DM Sans',sans-serif;">● Deliveries</button>
-    </div>
-    <div style="width:1px;height:24px;background:var(--gray-200);margin:0 2px;"></div>
-    <!-- Period toggles -->
-    <div style="display:flex;gap:4px;">
-      <button class="hm_period" onclick="hmSetPeriod(this,30)" style="font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid var(--gray-200);background:var(--black);color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">30d</button>
-      <button class="hm_period" onclick="hmSetPeriod(this,60)" style="font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid var(--gray-200);background:var(--gray-100);color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;">60d</button>
-      <button class="hm_period" onclick="hmSetPeriod(this,90)" style="font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid var(--gray-200);background:var(--gray-100);color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;">90d</button>
-      <button class="hm_period" onclick="hmSetPeriod(this,9999)" style="font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid var(--gray-200);background:var(--gray-100);color:var(--gray-600);cursor:pointer;font-family:'DM Sans',sans-serif;">All</button>
-    </div>
-    <div style="width:1px;height:24px;background:var(--gray-200);margin:0 2px;"></div>
-    <!-- Equipment filter -->
-    <select id="hm_equip_select" onchange="renderHeatmap()" style="height:32px;padding:0 10px;border:1px solid var(--gray-200);border-radius:20px;font-size:12px;font-family:'DM Sans',sans-serif;background:#fff;color:var(--black);cursor:pointer;">
-      <option value="">All equipment</option>
-    </select>
-    <!-- Count badge -->
-    <div style="margin-left:auto;font-size:12px;color:var(--gray-400);"><span id="hm_count">0</span> shipments</div>
-  </div>
-  <!-- No data placeholder -->
-  <div id="hm_placeholder" style="display:none;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:#f3f5f9;">
-    <div style="font-size:32px;">🗺️</div>
-    <div style="font-size:15px;font-weight:500;color:var(--black);">No shipment history loaded</div>
-    <div style="font-size:13px;color:var(--gray-400);margin-bottom:8px;">Upload your TMS export to see the heat map</div>
-    <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
-  </div>
-  <!-- Map container -->
-  <div id="hm_map" style="height:calc(100vh - 110px);width:100%;"></div>
-  <!-- Legend -->
-  <div id="hm_legend" style="display:none;position:absolute;bottom:24px;left:20px;background:rgba(255,255,255,0.92);border:1px solid var(--gray-200);border-radius:8px;padding:10px 14px;font-size:12px;z-index:1000;box-shadow:var(--shadow);">
-    <div style="font-weight:600;color:var(--black);margin-bottom:6px;">Legend</div>
-    <div style="display:flex;flex-direction:column;gap:4px;">
-      <div id="hm_legend_pickup" style="display:flex;align-items:center;gap:6px;"><span style="width:12px;height:12px;border-radius:50%;background:rgba(76,175,80,0.8);display:inline-block;"></span><span style="color:var(--gray-600);">Pickups</span></div>
-      <div id="hm_legend_delivery" style="display:flex;align-items:center;gap=6px;"><span style="width:12px;height:12px;border-radius:50%;background:rgba(30,136,229,0.8);display:inline-block;margin-right:6px;"></span><span style="color:var(--gray-600);">Deliveries</span></div>
-    </div>
-  </div>
-</div>
-
-<script>
-// ── Heatmap State ──────────────────────────────────────────────
-let hmMap = null;
-let hmPickupLayer = null;
-let hmDeliveryLayer = null;
-let hmShowPickup = true;
-let hmShowDelivery = true;
-let hmPeriodDays = 30;
-let hmCityCache = {};
-
-// Simple US city → lat/lng lookup using local CC table first, then Nominatim
-async function hmGeocode(city, state) {
-  const key = city + ',' + state;
-  if (hmCityCache[key]) return hmCityCache[key];
-
-  // Check local CC table first (instant, no network needed)
-  if (typeof getCityCoords === 'function') {
-    const local = getCityCoords(city, state);
-    if (local) { hmCityCache[key] = local; return local; }
-  }
-
-  // Fallback to Nominatim for cities not in local table
-  try {
-    const q = encodeURIComponent(city + ', ' + state + ', USA');
-    const r = await fetch('https://nominatim.openstreetmap.org/search?q=' + q + '&format=json&limit=1');
-    const d = await r.json();
-    if (d && d[0]) {
-      const coord = [parseFloat(d[0].lat), parseFloat(d[0].lon)];
-      hmCityCache[key] = coord;
-      return coord;
-    }
-  } catch(e) {}
-  return null;
-}
-
-// Parse "City, ST" or "City ST" format from shipment data
-function hmParseLocation(loc) {
-  if (!loc) return { city: '', state: '' };
-  const s = loc.trim();
-  // "Memphis, TN" or "Memphis TN"
-  const m = s.match(/^(.+?),?\s+([A-Z]{2})$/);
-  if (m) return { city: m[1].trim(), state: m[2] };
-  return { city: s, state: '' };
-}
-
-function hmToggleLayer(layer) {
-  if (layer === 'pickup') {
-    hmShowPickup = !hmShowPickup;
-    const btn = document.getElementById('hm_pickup_btn');
-    btn.style.background = hmShowPickup ? '#e8f5e9' : 'var(--gray-100)';
-    btn.style.borderColor = hmShowPickup ? '#43a047' : 'var(--gray-200)';
-    btn.style.color = hmShowPickup ? '#2e7d32' : 'var(--gray-400)';
-    document.getElementById('hm_legend_pickup').style.opacity = hmShowPickup ? '1' : '0.3';
-  } else {
-    hmShowDelivery = !hmShowDelivery;
-    const btn = document.getElementById('hm_delivery_btn');
-    btn.style.background = hmShowDelivery ? '#e3f2fd' : 'var(--gray-100)';
-    btn.style.borderColor = hmShowDelivery ? '#1e88e5' : 'var(--gray-200)';
-    btn.style.color = hmShowDelivery ? '#1565c0' : 'var(--gray-400)';
-    document.getElementById('hm_legend_delivery').style.opacity = hmShowDelivery ? '1' : '0.3';
-  }
-  renderHeatmap();
-}
-
-function hmSetPeriod(el, days) {
-  hmPeriodDays = days;
-  document.querySelectorAll('.hm_period').forEach(b => {
-    b.style.background = 'var(--gray-100)';
-    b.style.color = 'var(--gray-600)';
-    b.style.border = '1px solid var(--gray-200)';
-  });
-  el.style.background = 'var(--black)';
-  el.style.color = '#fff';
-  renderHeatmap();
-}
-
-async function renderHeatmap() {
-  const shipments = (typeof getHistory === "function") ? getHistory() : [];
-  const heatmapPage = document.getElementById('heatmapPage');
-  const placeholder = document.getElementById('hm_placeholder');
-  const mapDiv = document.getElementById('hm_map');
-  const legend = document.getElementById('hm_legend');
-
-  if (!shipments.length) {
-    if (placeholder) { placeholder.style.display = 'flex'; }
-    if (mapDiv) mapDiv.style.display = 'none';
-    if (legend) legend.style.display = 'none';
-    return;
-  }
-
-  if (placeholder) placeholder.style.display = 'none';
-  if (mapDiv) mapDiv.style.display = 'block';
-  if (legend) legend.style.display = 'block';
-
-  // Populate equipment dropdown on first load
-  const equipSelect = document.getElementById('hm_equip_select');
-  if (equipSelect && equipSelect.options.length <= 1) {
-    const equipTypes = [...new Set(shipments.map(s => s.equip || s['Equipment needed'] || '').filter(Boolean))].sort();
-    equipTypes.forEach(eq => {
-      const opt = document.createElement('option');
-      opt.value = eq; opt.textContent = eq;
-      equipSelect.appendChild(opt);
-    });
-  }
-
-  // Filter by period
-  const cutoff = hmPeriodDays === 9999 ? 0 : Date.now() - (hmPeriodDays * 86400000);
-  const equipFilter = equipSelect ? equipSelect.value : '';
-
-  const filtered = shipments.filter(s => {
-    const dateStr = s.pickupDate || s['Actual Pickup Date'] || '';
-    if (cutoff > 0 && dateStr) {
-      const d = new Date(dateStr);
-      if (!isNaN(d) && d.getTime() < cutoff) return false;
-    }
-    if (equipFilter) {
-      const eq = (s.equip || s['Equipment needed'] || '').toLowerCase();
-      if (!eq.includes(equipFilter.toLowerCase())) return false;
-    }
-    return true;
-  });
-
-  document.getElementById('hm_count').textContent = filtered.length.toLocaleString();
-
-  // Initialize map once
-  if (!hmMap) {
-    hmMap = L.map('hm_map').setView([39.5, -98.35], 4);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap contributors © CARTO',
-      maxZoom: 12
-    }).addTo(hmMap);
-  }
-
-  // Remove old layers
-  if (hmPickupLayer) { hmMap.removeLayer(hmPickupLayer); hmPickupLayer = null; }
-  if (hmDeliveryLayer) { hmMap.removeLayer(hmDeliveryLayer); hmDeliveryLayer = null; }
-
-  // Geocode all unique cities
-  const pickupPoints = [];
-  const deliveryPoints = [];
-  const geocodeQueue = new Map();
-
-  filtered.forEach(s => {
-    const orig = s.origin || s['Origin'] || '';
-    const dest = s.dest || s['Destination'] || '';
-    if (orig) { const p = hmParseLocation(orig); geocodeQueue.set(orig, p); }
-    if (dest) { const p = hmParseLocation(dest); geocodeQueue.set(dest, p); }
-  });
-
-  // Geocode unique locations (rate limited)
-  const uniqueLocs = [...geocodeQueue.entries()];
-  const coordMap = {};
-  for (let i = 0; i < uniqueLocs.length; i++) {
-    const [locStr, parsed] = uniqueLocs[i];
-    if (parsed.city) {
-      const coord = await hmGeocode(parsed.city, parsed.state);
-      if (coord) coordMap[locStr] = coord;
-      // rate limit only needed if falling back to network geocoding
-    }
-  }
-
-  // Build heat points
-  filtered.forEach(s => {
-    const orig = s.origin || s['Origin'] || '';
-    const dest = s.dest || s['Destination'] || '';
-    if (hmShowPickup && coordMap[orig]) pickupPoints.push([...coordMap[orig], 1]);
-    if (hmShowDelivery && coordMap[dest]) deliveryPoints.push([...coordMap[dest], 1]);
-  });
-
-  // Add heat layers
-  if (hmShowPickup && pickupPoints.length) {
-    hmPickupLayer = L.heatLayer(pickupPoints, {
-      radius: 28, blur: 20, maxZoom: 10,
-      gradient: { 0.2: '#a5d6a7', 0.5: '#66bb6a', 0.8: '#2e7d32', 1.0: '#1b5e20' }
-    }).addTo(hmMap);
-  }
-  if (hmShowDelivery && deliveryPoints.length) {
-    hmDeliveryLayer = L.heatLayer(deliveryPoints, {
-      radius: 28, blur: 20, maxZoom: 10,
-      gradient: { 0.2: '#90caf9', 0.5: '#42a5f5', 0.8: '#1565c0', 1.0: '#0d47a1' }
-    }).addTo(hmMap);
-  }
-
-  // Invalidate map size after display change
-  setTimeout(() => { if (hmMap) { hmMap.invalidateSize(); } }, 300);
-}
-</script>
-
 </body>
 </html>
