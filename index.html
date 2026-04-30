@@ -1865,6 +1865,15 @@ ${text}`
     const key = cityState.toLowerCase().trim();
     if (GEO_CACHE[key]) return GEO_CACHE[key];
 
+    // Check local CC table first (instant, no network)
+    const parts = key.replace(/,/g,'').replace(/\s+/g,' ').trim().split(' ');
+    if (parts.length >= 2) {
+      const state = parts[parts.length-1];
+      const city = parts.slice(0, parts.length-1).join(' ');
+      const localCoords = getCityCoords(city, state);
+      if (localCoords) { GEO_CACHE[key] = localCoords; return localCoords; }
+    }
+
     // Try Nominatim first with proper browser headers
     try {
       const q   = encodeURIComponent(cityState.trim() + ', USA');
@@ -3705,10 +3714,18 @@ let hmShowDelivery = true;
 let hmPeriodDays = 30;
 let hmCityCache = {};
 
-// Simple US city → lat/lng lookup using Nominatim (cached)
+// Simple US city → lat/lng lookup using local CC table first, then Nominatim
 async function hmGeocode(city, state) {
   const key = city + ',' + state;
   if (hmCityCache[key]) return hmCityCache[key];
+
+  // Check local CC table first (instant, no network needed)
+  if (typeof getCityCoords === 'function') {
+    const local = getCityCoords(city, state);
+    if (local) { hmCityCache[key] = local; return local; }
+  }
+
+  // Fallback to Nominatim for cities not in local table
   try {
     const q = encodeURIComponent(city + ', ' + state + ', USA');
     const r = await fetch('https://nominatim.openstreetmap.org/search?q=' + q + '&format=json&limit=1');
@@ -3844,7 +3861,7 @@ async function renderHeatmap() {
     if (parsed.city) {
       const coord = await hmGeocode(parsed.city, parsed.state);
       if (coord) coordMap[locStr] = coord;
-      if (i > 0 && i % 5 === 0) await new Promise(r => setTimeout(r, 1000)); // rate limit
+      // rate limit only needed if falling back to network geocoding
     }
   }
 
