@@ -820,6 +820,7 @@
     _s('rateIntelPage',      page==='rate');
     _s('reportsPage',        page==='reports');
     _s('heatmapPage',         page==='heatmap');
+    if (page==='heatmap') { const hm = document.getElementById('heatmapPage'); if(hm) hm.style.display='flex'; }
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
     const navMap = { lane:0, board:1, carriers:2, carrier:2, rate:3, reports:4, heatmap:5, admin:6 };
     const navIdx = navMap[page];
@@ -3034,7 +3035,8 @@ ${text}`
     links[2].onclick = () => { showPage('carriers'); renderCarrierDirectory(); };
     links[3].onclick = () => { showPage('rate'); };
     links[4].onclick = () => { showPage('reports'); };
-    links[5].onclick = () => { showPage('admin'); updateHistoryStats(); };
+    links[5].onclick = () => { showPage('heatmap'); };
+    links[6].onclick = () => { showPage('admin'); updateHistoryStats(); };
 
     // Lane search — attach all handlers after JS is fully loaded
     const lsOrigin  = document.getElementById('ls_origin');
@@ -3646,7 +3648,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
 </div>
 
-<div id="heatmapPage" style="display:none;height:calc(100vh - 48px);display:none;flex-direction:column;">
+<div id="heatmapPage" style="display:none;flex-direction:column;">
   <!-- Header controls -->
   <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0;">
     <div>
@@ -3682,7 +3684,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <button onclick="showPage('admin')" style="height:36px;padding:0 18px;background:var(--green);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Upload shipment history →</button>
   </div>
   <!-- Map container -->
-  <div id="hm_map" style="flex:1;"></div>
+  <div id="hm_map" style="height:calc(100vh - 110px);width:100%;"></div>
   <!-- Legend -->
   <div id="hm_legend" style="display:none;position:absolute;bottom:24px;left:20px;background:rgba(255,255,255,0.92);border:1px solid var(--gray-200);border-radius:8px;padding:10px 14px;font-size:12px;z-index:1000;box-shadow:var(--shadow);">
     <div style="font-weight:600;color:var(--black);margin-bottom:6px;">Legend</div>
@@ -3869,7 +3871,7 @@ async function renderHeatmap() {
   }
 
   // Invalidate map size after display change
-  setTimeout(() => { if (hmMap) hmMap.invalidateSize(); }, 100);
+  setTimeout(() => { if (hmMap) { hmMap.invalidateSize(); } }, 300);
 }
 </script>
 
