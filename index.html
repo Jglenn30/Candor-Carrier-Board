@@ -619,7 +619,7 @@
       return true;
     });
 
-    document.getElementById('totalCount').textContent = filtered.length;
+    document.getElementById('totalCount').textContent = filtered.filter(t=>group(t.posted)==='fresh').length;
     const staleEl = document.getElementById('staleCount'); if(staleEl) staleEl.textContent = filtered.filter(t=>group(t.posted)==='stale').length;
     const inboundEl = document.getElementById('inboundCount');
     if (inboundEl) inboundEl.textContent = getInboundTrucks().length;
@@ -2296,6 +2296,8 @@ ${text}`
     } else {
       if (mc && mc !== '—') carriers[currentCarrierId].mc = mc;
       if (phone && phone !== '—') carriers[currentCarrierId].phone = phone;
+      // Never overwrite createdAt — preserve the original first-seen date
+      if (!carriers[currentCarrierId].createdAt) carriers[currentCarrierId].createdAt = new Date().toLocaleDateString();
       saveCarriers(carriers);
     }
     renderCarrierProfile(currentCarrierId);
