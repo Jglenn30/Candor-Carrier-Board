@@ -462,24 +462,35 @@ async function getHistory() {
 }
 
 async function dbSaveShipments(shipments) {
+  // Generate guaranteed unique IDs for every row
+  const rows = shipments.map((s, idx) => ({
+    id: String(s.id && s.id.trim() ? s.id.trim() : (s.carrier||'x') + '|' + (s.origin||'x') + '|' + (s.date||'x') + '|' + idx),
+    carrier: s.carrier||'', origin: s.origin||'', dest: s.dest||'',
+    date: s.date||'', deliv_date: s.delivDate||'',
+    carrier_cost: parseFloat(s.carrierCost)||0, cust_cost: parseFloat(s.custCost)||0,
+    equip: s.equip||'', net_revenue: parseFloat(s.netRevenue)||0, margin: parseFloat(s.margin)||0
+  }));
+
+  // Check existing IDs to skip true duplicates
   const { data: existing } = await sb.from('shipments').select('id');
-  const existingIds = new Set((existing||[]).map(r => r.id).filter(Boolean));
-  const newShipments = shipments.filter(s => !s.id || !existingIds.has(String(s.id)));
-  if (!newShipments.length) return 0;
-  const batchSize = 500;
-  for (let i = 0; i < newShipments.length; i += batchSize) {
-    const batch = newShipments.slice(i, i + batchSize).map((s, idx) => ({
-      id: String(s.id || (s.carrier + '|' + s.origin + '|' + s.date + '|' + (i+idx))),
-      carrier: s.carrier||'', origin: s.origin||'', dest: s.dest||'',
-      date: s.date||'', deliv_date: s.delivDate||s.deliverDate||'',
-      carrier_cost: s.carrierCost||0, cust_cost: s.custCost||0,
-      equip: s.equip||'', net_revenue: s.netRevenue||0, margin: s.margin||0
-    }));
-    const { error } = await sb.from('shipments').upsert(batch, { onConflict: 'id' });
-    if (error) console.error('Save shipments batch:', error);
+  const existingIds = new Set((existing||[]).map(r => r.id));
+  const newRows = rows.filter(r => !existingIds.has(r.id));
+  if (!newRows.length) return 0;
+
+  // Insert in batches of 200 (smaller = more reliable)
+  const batchSize = 200;
+  let saved = 0;
+  for (let i = 0; i < newRows.length; i += batchSize) {
+    const batch = newRows.slice(i, i + batchSize);
+    const { error } = await sb.from('shipments').insert(batch);
+    if (error) {
+      console.error('Batch error at', i, error.message);
+    } else {
+      saved += batch.length;
+    }
   }
   cachedHistory = null;
-  return newShipments.length;
+  return saved;
 }
 
 // ── USERS ──
@@ -840,10 +851,15 @@ function handleHistoryFile(file) {
           if(progressTxt)progressTxt.textContent='Saving to Supabase...';
           if(progressBar)progressBar.style.width='80%';
           const added = await dbSaveShipments(shipments);
+          cachedHistory = null; // force fresh reload
+          const allHistory = await getHistory();
           if(progressBar)progressBar.style.width='100%';
-          if(progressTxt)progressTxt.textContent='✓ Added '+added.toLocaleString()+' new shipments to shared database';
+          if(progressTxt)progressTxt.textContent='✓ '+added.toLocaleString()+' new shipments added ('+allHistory.length.toLocaleString()+' total in database)';
           localStorage.setItem('candor_history_date',new Date().toLocaleDateString());
-          await updateHistoryStats();
+          const countEl=document.getElementById('sh_count'),lastEl=document.getElementById('sh_last_import'),badge=document.getElementById('sh_badge');
+          if(countEl)countEl.textContent=allHistory.length.toLocaleString();
+          if(lastEl)lastEl.textContent=new Date().toLocaleDateString();
+          if(badge){badge.textContent=allHistory.length.toLocaleString()+' loaded';badge.style.background='var(--green-light)';badge.style.color='var(--green-dark)';}
           await processInboundFromUpload(shipments);
           showToast('Added '+added.toLocaleString()+' new shipments','green');
           setTimeout(()=>{if(progress)progress.style.display='none';},3000);
