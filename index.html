@@ -1336,7 +1336,7 @@ async function runLaneSearch(){
     if(include)inboundResults.push({...t,distance});
   }
   if(btn){btn.textContent='Search';btn.disabled=false;}
-  renderLaneResults(results,originRaw,destRaw,radius,inboundResults);
+  await renderLaneResults(results,originRaw,destRaw,radius,inboundResults);
 }
 
 async function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
