@@ -1265,29 +1265,163 @@ async function renderReports(){
 }
 
 async function runRateSearch(){
-  const origin=(document.getElementById('ri_origin')||{value:''}).value.trim();
-  const dest=(document.getElementById('ri_dest')||{value:''}).value.trim();
-  if(!origin){showToast('Enter an origin to search');return;}
+  const originVal=(document.getElementById('ri_origin')||{value:''}).value.trim();
+  const destVal=(document.getElementById('ri_dest')||{value:''}).value.trim();
+  const radiusVal=parseInt((document.getElementById('ri_radius')||{value:'9999'}).value)||9999;
+  const equipVal=(document.getElementById('ri_equip')||{value:''}).value.toLowerCase().trim();
+  if(!originVal){showToast('Enter an origin to search');return;}
   const history=await getHistory();
   if(!history.length){showToast('No shipment history loaded — upload your TMS export first');showPage('admin');return;}
-  const matches=history.filter(s=>{const o=(s.origin||'').toLowerCase(),d=(s.dest||s.destination||'').toLowerCase();return o.includes(origin.toLowerCase())&&(!dest||d.includes(dest.toLowerCase()));});
+
+  // Equipment mapping — TMS values to plain names
+  const EQUIP_MAP={
+    'sprinter':['van - sprinter','sprinter','van-sprinter'],
+    'dry van':['van - dry','dry van','van - dry 53','dry','van'],
+    'reefer sprinter':['van - sprinter, reefer','reefer sprinter','sprinter reefer','van - sprinter,reefer'],
+    'reefer straight truck':['van or reefer, straight truck','reefer straight truck','reefer st truck','straight truck, reefer'],
+    'straight truck':['straight truck','van, straight truck'],
+    'reefer':['reefer','van or reefer','refrigerated','reefer 53'],
+    'flatbed':['flatbed'],
+    'power only':['power only'],
+    'cargo van':['cargo van'],
+  };
+
+  function equipMatches(shipmentEquip, filterEquip){
+    if(!filterEquip)return true;
+    const raw=(shipmentEquip||'').toLowerCase().trim();
+    const aliases=EQUIP_MAP[filterEquip]||[filterEquip];
+    return aliases.some(a=>raw.includes(a)||a.includes(raw));
+  }
+
+  // Get coords for origin and dest
+  const oParts=originVal.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+  const oCity=oParts?oParts[1].trim():originVal;
+  const oState=oParts?oParts[2].trim().toUpperCase():'';
+  const oCoords=getCityCoords(oCity,oState)||await geocode(originVal);
+
+  let dCoords=null;
+  if(destVal){
+    const dParts=destVal.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+    const dCity=dParts?dParts[1].trim():destVal;
+    const dState=dParts?dParts[2].trim().toUpperCase():'';
+    dCoords=getCityCoords(dCity,dState)||await geocode(destVal);
+  }
+
+  const matches=history.filter(s=>{
+    // Equipment filter
+    if(!equipMatches(s.equip||s['Equipment needed'],equipVal))return false;
+
+    // Origin radius filter
+    if(oCoords&&radiusVal!==9999){
+      const sParts=(s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
+      if(sParts){
+        const sCoords=getCityCoords(sParts[1].trim(),sParts[2].trim().toUpperCase());
+        if(sCoords){
+          if(haversine(oCoords[0],oCoords[1],sCoords[0],sCoords[1])>radiusVal)return false;
+        } else {
+          // No coords - use state match
+          if(sParts[2].toUpperCase()!==oState)return false;
+        }
+      }
+    } else if(!oCoords){
+      // No coords for search city - text match
+      if(!(s.origin||'').toLowerCase().includes(oCity.toLowerCase()))return false;
+    }
+
+    // Destination radius filter
+    if(destVal&&dCoords&&radiusVal!==9999){
+      const dsParts=(s.dest||'').match(/([^,]+),\s*([A-Z]{2})/i);
+      if(dsParts){
+        const dsCoords=getCityCoords(dsParts[1].trim(),dsParts[2].trim().toUpperCase());
+        if(dsCoords){
+          if(haversine(dCoords[0],dCoords[1],dsCoords[0],dsCoords[1])>radiusVal)return false;
+        }
+      }
+    } else if(destVal&&!dCoords){
+      if(!(s.dest||'').toLowerCase().includes(destVal.split(',')[0].trim().toLowerCase()))return false;
+    }
+
+    return true;
+  });
+
   const placeholder=document.getElementById('ri_placeholder'),results=document.getElementById('ri_results');
-  if(!matches.length){if(placeholder){placeholder.innerHTML='<div style="text-align:center;padding:40px;"><div style="font-size:24px;margin-bottom:10px;">🔍</div><div style="font-size:14px;color:var(--gray-400);">No shipments found for this lane</div></div>';placeholder.style.display='';}if(results)results.style.display='none';return;}
-  if(placeholder)placeholder.style.display='none';if(results)results.style.display='flex';
+  if(!matches.length){
+    if(placeholder){placeholder.innerHTML='<div style="text-align:center;padding:40px;"><div style="font-size:24px;margin-bottom:10px;">🔍</div><div style="font-size:14px;color:var(--gray-400);">No shipments found for this lane — try increasing the radius or removing the equipment filter</div></div>';placeholder.style.display='';}
+    if(results)results.style.display='none';return;
+  }
+  if(placeholder)placeholder.style.display='none';
+  if(results)results.style.display='flex';
+
   const totalCarrierPay=matches.reduce((s,r)=>s+parseMoneySafe(r.carrierCost||r['Carrier Costs']),0);
   const totalCustCharge=matches.reduce((s,r)=>s+parseMoneySafe(r.custCost||r['Customer Costs']),0);
-  const avgCarrier=totalCarrierPay/matches.length,avgCust=totalCustCharge/matches.length,avgNet=avgCust-avgCarrier,avgMargin=avgCust>0?((avgNet/avgCust)*100):0;
+  const avgCarrier=totalCarrierPay/matches.length,avgCust=totalCustCharge/matches.length;
+  const avgNet=avgCust-avgCarrier,avgMargin=avgCust>0?((avgNet/avgCust)*100):0;
   const carPays=matches.map(s=>parseMoneySafe(s.carrierCost||s['Carrier Costs'])).filter(v=>v>0).sort((a,b)=>a-b);
+
+  // Equipment breakdown
+  const equipBreakdown={};
+  matches.forEach(s=>{
+    const raw=(s.equip||s['Equipment needed']||'Unknown').trim();
+    if(!equipBreakdown[raw])equipBreakdown[raw]={count:0,pay:0,charge:0};
+    equipBreakdown[raw].count++;
+    equipBreakdown[raw].pay+=parseMoneySafe(s.carrierCost||s['Carrier Costs']);
+    equipBreakdown[raw].charge+=parseMoneySafe(s.custCost||s['Customer Costs']);
+  });
+
   const cardsEl=document.getElementById('ri_rate_cards');
-  if(cardsEl)cardsEl.innerHTML=[['Avg carrier pay','$'+avgCarrier.toFixed(0),'Range: $'+carPays[0]?.toFixed(0)+'–$'+carPays[carPays.length-1]?.toFixed(0),'var(--black)'],['Avg customer charge','$'+avgCust.toFixed(0),matches.length+' shipments','var(--black)'],['Avg net revenue','$'+avgNet.toFixed(0),'per shipment',avgNet>0?'var(--green-dark)':'var(--red-dark)'],['Avg margin',avgMargin.toFixed(1)+'%',avgMargin>=20?'Healthy':'Below target',avgMargin>=20?'var(--green-dark)':'var(--amber-dark)']].map(([label,val,sub,color])=>`<div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">${label}</div><div style="font-size:22px;font-weight:600;color:${color};">${val}</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px;">${sub}</div></div>`).join('');
+  if(cardsEl)cardsEl.innerHTML=[
+    ['Avg carrier pay','$'+avgCarrier.toFixed(0),'Range: $'+(carPays[0]||0).toFixed(0)+' – $'+(carPays[carPays.length-1]||0).toFixed(0),'var(--black)'],
+    ['Avg customer charge','$'+avgCust.toFixed(0),matches.length+' shipments','var(--black)'],
+    ['Avg net revenue','$'+avgNet.toFixed(0),'per shipment',avgNet>0?'var(--green-dark)':'var(--red-dark)'],
+    ['Avg margin',avgMargin.toFixed(1)+'%',avgMargin>=20?'Healthy':'Below target',avgMargin>=20?'var(--green-dark)':'var(--amber-dark)'],
+  ].map(([label,val,sub,color])=>'<div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:14px 16px;box-shadow:var(--shadow);"><div style="font-size:11px;color:var(--gray-400);margin-bottom:4px;">'+label+'</div><div style="font-size:22px;font-weight:600;color:'+color+';">'+val+'</div><div style="font-size:11px;color:var(--gray-400);margin-top:2px;">'+sub+'</div></div>').join('');
+
   const pct=Math.min(100,Math.max(0,avgMargin));
   const barEl=document.getElementById('ri_margin_bar'),lbl=document.getElementById('ri_margin_label');
   if(barEl){barEl.style.width=pct+'%';barEl.style.background=pct>=20?'var(--green)':pct>=10?'var(--amber)':'var(--red)';}
   if(lbl)lbl.textContent=avgMargin.toFixed(1)+'% — '+(pct>=20?'Good':pct>=10?'Watch this':'Below target');
+
   const cntEl=document.getElementById('ri_lane_count');if(cntEl)cntEl.textContent=matches.length+' shipments';
+
+  // Equipment breakdown section
+  const equipEl=document.getElementById('ri_equip_breakdown');
+  if(equipEl&&Object.keys(equipBreakdown).length>1){
+    equipEl.style.display='';
+    const sorted=Object.entries(equipBreakdown).sort((a,b)=>b[1].count-a[1].count);
+    equipEl.innerHTML='<div style="font-size:13px;font-weight:600;color:var(--black);padding:12px 16px;border-bottom:1px solid var(--gray-200);">By equipment type</div>'
+      +sorted.map(([name,d])=>{
+        const ap=d.count>0?(d.pay/d.count).toFixed(0):'—';
+        const ac=d.count>0?(d.charge/d.count).toFixed(0):'—';
+        const mg=d.charge>0?(((d.charge-d.pay)/d.charge)*100).toFixed(1):'—';
+        return '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);padding:10px 16px;">'
+          +'<div style="flex:1;font-size:13px;font-weight:500;color:var(--black);">'+name+'</div>'
+          +'<div style="width:80px;font-size:12px;color:var(--gray-600);">'+d.count+' loads</div>'
+          +'<div style="width:110px;font-size:12px;color:var(--gray-600);">$'+ap+'/load</div>'
+          +'<div style="width:110px;font-size:12px;color:var(--gray-600);">$'+ac+' avg charge</div>'
+          +'<div style="width:80px;font-size:12px;font-weight:500;color:'+(parseFloat(mg)>=20?'var(--green-dark)':parseFloat(mg)>=10?'var(--amber-dark)':'var(--red-dark)')+';">'+mg+'%</div>'
+          +'</div>';
+      }).join('');
+  } else if(equipEl){equipEl.style.display='none';}
+
   const rowsEl=document.getElementById('ri_lane_rows');
-  if(rowsEl){const sorted=[...matches].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,50);rowsEl.innerHTML=sorted.map(s=>{const cp=parseMoneySafe(s.carrierCost||s['Carrier Costs']),cc=parseMoneySafe(s.custCost||s['Customer Costs']),net=cc-cp,mg=cc>0?((net/cc)*100):0;return`<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);"><div style="flex:1;padding:10px 16px;font-size:12px;font-weight:500;color:var(--black);">${s.carrier||'—'}</div><div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${s.date||'—'}</div><div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${cp.toFixed(0)}</div><div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$${cc.toFixed(0)}</div><div style="width:90px;padding:10px 12px;font-size:12px;font-weight:500;flex-shrink:0;color:${mg>=20?'var(--green-dark)':mg>=10?'var(--amber-dark)':'var(--red-dark)'};">${mg.toFixed(1)}%</div></div>`;}).join('');}
+  if(rowsEl){
+    const sorted=[...matches].sort((a,b)=>new Date(b.date||0)-new Date(a.date||0)).slice(0,100);
+    rowsEl.innerHTML=sorted.map(s=>{
+      const cp=parseMoneySafe(s.carrierCost||s['Carrier Costs']),cc=parseMoneySafe(s.custCost||s['Customer Costs']);
+      const net=cc-cp,mg=cc>0?((net/cc)*100):0;
+      const eq=(s.equip||s['Equipment needed']||'—').trim();
+      return '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+        +'<div style="flex:1;padding:10px 16px;font-size:12px;font-weight:500;color:var(--black);">'+( s.carrier||'—')+'</div>'
+        +'<div style="width:80px;padding:10px 12px;font-size:11px;color:var(--gray-400);flex-shrink:0;">'+eq+'</div>'
+        +'<div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">'+(s.date||'—')+'</div>'
+        +'<div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$'+cp.toFixed(0)+'</div>'
+        +'<div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">$'+cc.toFixed(0)+'</div>'
+        +'<div style="width:80px;padding:10px 12px;font-size:12px;font-weight:500;flex-shrink:0;color:'+(mg>=20?'var(--green-dark)':mg>=10?'var(--amber-dark)':'var(--red-dark)')+';">'+mg.toFixed(1)+'%</div>'
+        +'</div>';
+    }).join('');
+  }
 }
+
 
 // ── GEOCODING (kept local, no DB needed) ──
 const GEO_CACHE={};
@@ -1547,6 +1681,9 @@ function initNav(){
   if(riBtn)riBtn.addEventListener('click',runRateSearch);
   if(riOrigin)riOrigin.addEventListener('keydown',e=>{if(e.key==='Enter')runRateSearch();});
   if(riDest)riDest.addEventListener('keydown',e=>{if(e.key==='Enter')runRateSearch();});
+  const riRadius=document.getElementById('ri_radius'),riEquip=document.getElementById('ri_equip');
+  if(riRadius)riRadius.addEventListener('change',()=>{if(document.getElementById('ri_origin').value.trim())runRateSearch();});
+  if(riEquip)riEquip.addEventListener('change',()=>{if(document.getElementById('ri_origin').value.trim())runRateSearch();});
   const cSearch=document.getElementById('carrier_search'),cEquip=document.getElementById('carrier_equip_filter'),cStatus=document.getElementById('carrier_status_filter'),cSort=document.getElementById('carrier_sort');
   if(cSearch)cSearch.addEventListener('input',()=>renderCarrierDirectory());
   if(cEquip)cEquip.addEventListener('change',()=>renderCarrierDirectory());
@@ -1776,9 +1913,29 @@ document.addEventListener('DOMContentLoaded',function(){init();initNav();});
 <div id="rateIntelPage" style="display:none;">
   <div style="background:#fff;border-bottom:1px solid var(--gray-200);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;"><div><div style="font-size:16px;font-weight:600;color:var(--black);">Rate Intelligence</div><div style="font-size:12px;color:var(--gray-400);margin-top:2px;">Historical carrier pay and margin data by lane</div></div></div>
   <div style="background:var(--gray-50);border-bottom:1px solid var(--gray-200);padding:12px 28px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-    <input id="ri_origin" type="text" placeholder="Origin city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <input id="ri_origin" type="text" placeholder="Origin city, ST" style="height:38px;width:180px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
     <div style="color:var(--gray-300);font-size:16px;">→</div>
-    <input id="ri_dest" type="text" placeholder="Destination city, ST" style="height:38px;width:200px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <input id="ri_dest" type="text" placeholder="Destination city, ST (optional)" style="height:38px;width:210px;border:1px solid var(--gray-200);border-radius:var(--radius-md);padding:0 12px;font-size:13px;font-family:'DM Sans',sans-serif;background:#fff;" />
+    <select id="ri_radius" class="filter-select">
+      <option value="9999">Any distance</option>
+      <option value="50">50 mi</option>
+      <option value="100">100 mi</option>
+      <option value="150" selected>150 mi</option>
+      <option value="200">200 mi</option>
+      <option value="300">300 mi</option>
+    </select>
+    <select id="ri_equip" class="filter-select">
+      <option value="">All equipment</option>
+      <option value="dry van">Dry van</option>
+      <option value="reefer">Reefer</option>
+      <option value="sprinter">Sprinter</option>
+      <option value="reefer sprinter">Reefer sprinter</option>
+      <option value="straight truck">Straight truck</option>
+      <option value="reefer straight truck">Reefer straight truck</option>
+      <option value="flatbed">Flatbed</option>
+      <option value="power only">Power only</option>
+      <option value="cargo van">Cargo van</option>
+    </select>
     <button id="ri_search_btn" style="height:38px;padding:0 18px;background:var(--black);border:none;border-radius:var(--radius-md);font-size:13px;font-weight:500;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;">Look up lane</button>
   </div>
   <div style="padding:20px 28px;max-width:1100px;">
@@ -1786,9 +1943,10 @@ document.addEventListener('DOMContentLoaded',function(){init();initNav();});
     <div id="ri_results" style="display:none;flex-direction:column;gap:16px;">
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;" id="ri_rate_cards"></div>
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);padding:16px 20px;box-shadow:var(--shadow);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><div style="font-size:13px;font-weight:600;color:var(--black);">Margin health</div><div id="ri_margin_label" style="font-size:13px;font-weight:500;color:var(--green-dark);"></div></div><div style="height:8px;background:var(--gray-100);border-radius:4px;overflow:hidden;"><div id="ri_margin_bar" style="height:100%;border-radius:4px;background:var(--green);transition:width 0.4s;"></div></div></div>
+      <div id="ri_equip_breakdown" style="display:none;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);"></div>
       <div style="background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow);">
         <div style="padding:12px 16px;border-bottom:1px solid var(--gray-200);display:flex;justify-content:space-between;align-items:center;"><div style="font-size:13px;font-weight:600;color:var(--black);">Shipments on this lane</div><span id="ri_lane_count" style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);"></span></div>
-        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);"><div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Date</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Carrier pay</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Cust charge</div><div style="width:90px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Margin</div></div>
+        <div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);"><div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div><div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Equip</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Date</div><div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Carrier pay</div><div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Cust charge</div><div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Margin</div></div>
         <div id="ri_lane_rows" style="max-height:400px;overflow-y:auto;"></div>
       </div>
     </div>
