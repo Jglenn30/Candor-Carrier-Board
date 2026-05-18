@@ -1365,35 +1365,100 @@ async function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
     if(!history.length){histRowsEl.innerHTML='<div style="padding:20px 16px;"><div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div><div style="font-size:12px;color:var(--gray-400);">Upload your TMS export in Admin to unlock carrier lane history.</div><div style="margin-top:8px;"><span onclick="showPage(\'admin\')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div></div>';}
     else{
       const originCity=origin.split(',')[0].trim();
-      const matches=history.filter(s=>{const d=(s.dest||'').toLowerCase();const destMatch=!dest||d.includes(dest.split(',')[0].trim().toLowerCase());if(!destMatch)return false;return(s.origin||'').toLowerCase().includes(originCity.toLowerCase());});
+      const originSt=((origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'').toUpperCase();
+      const searchCoords=getCityCoords(originCity,originSt)||GEO_CACHE[(originCity+' '+originSt).toLowerCase()];
+
+      const matches=history.filter(s=>{
+        // Destination filter
+        const d=(s.dest||'').toLowerCase();
+        const destMatch=!dest||d.includes(dest.split(',')[0].trim().toLowerCase());
+        if(!destMatch)return false;
+
+        // Origin matching — use radius if we have coords, otherwise fall back to text
+        if(searchCoords&&radius&&radius!==9999){
+          const oParts=(s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
+          if(oParts){
+            const oCoords=getCityCoords(oParts[1].trim(),oParts[2].trim().toUpperCase())
+              ||GEO_CACHE[(oParts[1].trim()+' '+oParts[2].trim()).toLowerCase()];
+            if(oCoords){
+              const dist=haversine(searchCoords[0],searchCoords[1],oCoords[0],oCoords[1]);
+              return dist<=radius;
+            }
+          }
+          // Coords not found — fall back to state match
+          return (s.origin||'').toUpperCase().includes(originSt||originCity.toUpperCase());
+        }
+        // No coords — text match
+        return(s.origin||'').toLowerCase().includes(originCity.toLowerCase());
+      });
       if(!matches.length){histRowsEl.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No history found for this lane</div>';}
       else{
         const carrierMap={};
-        for(const s of matches){const name=(s.carrier||'Unknown').split(',')[0].trim();if(!carrierMap[name])carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set()};carrierMap[name].loads++;carrierMap[name].totalPay+=s.carrierCost||0;if(s.equip&&s.equip.trim()&&s.equip.trim()!=='-')carrierMap[name].equips.add(s.equip.trim());if(!carrierMap[name].lastDate||new Date(s.date)>new Date(carrierMap[name].lastDate))carrierMap[name].lastDate=s.date;}
-        const carriers=Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,10);
+        for(const s of matches){
+          const name=(s.carrier||'Unknown').split(',')[0].trim();
+          if(!carrierMap[name])carrierMap[name]={loads:0,totalPay:0,lastDate:'',equips:new Set(),origins:{}};
+          carrierMap[name].loads++;
+          carrierMap[name].totalPay+=s.carrierCost||0;
+          const eq=(s.equip||s['Equipment needed']||'').trim();
+          if(eq&&eq!=='-')carrierMap[name].equips.add(eq);
+          if(!carrierMap[name].lastDate||new Date(s.date)>new Date(carrierMap[name].lastDate))carrierMap[name].lastDate=s.date;
+          const orig=(s.origin||'').replace(/,\s*US$/i,'').trim();
+          if(orig)carrierMap[name].origins[orig]=(carrierMap[name].origins[orig]||0)+1;
+        }
+        for(const d of Object.values(carrierMap)){const entries=Object.entries(d.origins||{});if(entries.length)d.topOrigin=entries.sort((a,b)=>b[1]-a[1])[0][0];}
+        const carriers=Object.entries(carrierMap).sort((a,b)=>b[1].loads-a[1].loads).slice(0,15);
         const histCountEl=document.getElementById('ls_hist_count');if(histCountEl)histCountEl.textContent=carriers.length+' carriers';
-        histRowsEl.innerHTML='<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);"><div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div><div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div><div style="width:100px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div></div>'+carriers.map(([name,d])=>`<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);"><div style="flex:1;padding:10px 16px;font-size:13px;font-weight:500;color:var(--black);">${name}</div><div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads}</div><div style="width:100px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">${d.loads>0?'$'+(d.totalPay/d.loads).toFixed(0)+'/load':'—'}</div><div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">${d.lastDate||'—'}</div></div>`).join('');
-      }
+        histRowsEl.innerHTML='<div style="display:flex;background:var(--gray-50);border-bottom:1px solid var(--gray-200);"><div style="flex:1;padding:7px 16px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;">Carrier</div><div style="width:80px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Loads</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Avg pay</div><div style="width:110px;padding:7px 12px;font-size:11px;color:var(--gray-400);font-weight:500;text-transform:uppercase;flex-shrink:0;">Last ran</div></div>'+carriers.map(([name,d])=>{
+          const equipTags=[...d.equips].slice(0,3).map(e=>'<span style="font-size:10px;padding:1px 6px;border-radius:20px;background:var(--gray-100);color:var(--gray-600);border:0.5px solid var(--gray-200);display:inline-block;margin-right:3px;">'+e+'</span>').join('');
+          const topOriginHtml=d.topOrigin?'<div style="font-size:11px;color:var(--gray-400);margin-top:2px;">Most common pickup: '+d.topOrigin+'</div>':'';
+          const avgPay=d.loads>0?'$'+(d.totalPay/d.loads).toFixed(0)+'/load':'—';
+          return '<div style="display:flex;align-items:center;border-bottom:1px solid var(--gray-100);">'
+            +'<div style="flex:1;padding:10px 16px;min-width:0;">'
+            +'<div style="font-size:13px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+name+'</div>'
+            +topOriginHtml
+            +'<div style="margin-top:3px;">'+equipTags+'</div>'
+            +'</div>'
+            +'<div style="width:80px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">'+d.loads+' loads</div>'
+            +'<div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-600);flex-shrink:0;">'+avgPay+'</div>'
+            +'<div style="width:110px;padding:10px 12px;font-size:12px;color:var(--gray-400);flex-shrink:0;">'+(d.lastDate||'—')+'</div>'
+            +'</div>';
+        }).join('');
     }
   }
 }
-
-// ── PAGE SWITCHING ──
-function showPage(page){
-  const pages=['boardArea','adminPage','laneSearchPage','carriersPage','carrierProfilePage','rateIntelPage','reportsPage'];
-  pages.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  const toolbar=document.querySelector('.toolbar'),chipBar=document.querySelector('.chip-bar');
-  if(toolbar)toolbar.style.display='none';if(chipBar)chipBar.style.display='none';
-  if(page==='board'){const el=document.getElementById('boardArea');if(el)el.style.display='';if(toolbar)toolbar.style.display='';if(chipBar)chipBar.style.display='';}
-  else{const el=document.getElementById(page==='lane'?'laneSearchPage':page==='admin'?'adminPage':page==='carriers'?'carriersPage':page==='carrier'?'carrierProfilePage':page==='rate'?'rateIntelPage':page==='reports'?'reportsPage':'boardArea');if(el)el.style.display='';}
-  document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
-  const navMap={lane:0,board:1,carriers:2,carrier:2,rate:3,reports:4,admin:5};
-  const navIdx=navMap[page];if(navIdx!==undefined)document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
-  if(page==='reports')renderReports();
-  if(page==='rate')renderReports();
-  if(page==='admin')updateHistoryStats().catch(()=>{});
-  if(page==='board'){cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderBoard(null);}):renderBoard(null);}
 }
+
+// ── LANE SEARCH ──
+async function runLaneSearch(){
+  const originEl=document.getElementById('ls_origin'),destEl=document.getElementById('ls_dest'),radEl=document.getElementById('ls_radius'),eqEl=document.getElementById('ls_equip'),btn=document.getElementById('ls_search_btn');
+  if(!originEl)return;
+  const originRaw=originEl.value.trim(),destRaw=destEl?destEl.value.trim():'',radius=radEl?parseInt(radEl.value):150,equipFilt=eqEl?eqEl.value.toLowerCase():'';
+  if(!originRaw){showToast('Enter an origin city to search');return;}
+  if(btn){btn.textContent='Searching...';btn.disabled=true;}
+  const parts=originRaw.match(/([A-Za-z\s.'-]+),?\s*([A-Z]{2})/i);
+  const originCity=parts?parts[1].trim():originRaw,originSt=parts?parts[2].trim().toUpperCase():'';
+  let originCoords=getCityCoords(originCity,originSt)||await geocode(originRaw);
+  const trucks=cachedTrucks,results=[];
+  for(const t of trucks){
+    if(equipFilt&&!t.equip.toLowerCase().includes(equipFilt))continue;
+    let distance=null,include=false;
+    if(originCoords){let tc=getCityCoords(t.city,t.state)||GEO_CACHE[(t.city+', '+t.state).toLowerCase()];if(tc){distance=Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));include=radius===9999||distance<=radius;}else{include=radius===9999||t.state===originSt;}}
+    else{include=!originSt||t.state===originSt;}
+    if(include)results.push({...t,distance});
+  }
+  results.sort((a,b)=>(a.distance!=null?a.distance:9999)-(b.distance!=null?b.distance:9999));
+  const inbound=await getInboundTrucks(),inboundResults=[];
+  for(const t of inbound){
+    if(equipFilt&&!t.equip.toLowerCase().includes(equipFilt))continue;
+    let distance=null,include=false;
+    if(originCoords){let tc=getCityCoords(t.city,t.state);if(tc){distance=Math.round(haversine(originCoords[0],originCoords[1],tc[0],tc[1]));include=radius===9999||distance<=radius;}else{include=!originSt||t.state===originSt;}}
+    else{include=!originSt||t.state===originSt;}
+    if(include)inboundResults.push({...t,distance});
+  }
+  if(btn){btn.textContent='Search';btn.disabled=false;}
+  await renderLaneResults(results,originRaw,destRaw,radius,inboundResults);
+}
+
 
 // ── CARRIERS PAGE ──
 let selectedCarrierId=null;
@@ -1428,7 +1493,7 @@ async function renderCarrierDirectory(){
     if(c.dnu)statusBadge='<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--red-light);color:var(--red-dark);font-weight:500;">DNU</span>';
     else if(cachedTrucks.some(t=>carrierIdFromName(t.carrier)===c.id))statusBadge='<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--blue-light);color:var(--blue-dark);font-weight:500;">On board</span>';
     else statusBadge='<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:var(--green-light);color:var(--green-dark);font-weight:500;">Active</span>';
-    html+=`<div data-cid="${c.id}" class="carrier-dir-row" onclick="openCarrierProfile('${c.name.replace(/'/g,"\\'")}','${c.mc||'—'}','${c.phone||'—'}')" style="display:flex;align-items:center;background:${c.id===selectedCarrierId?'var(--green-light)':'#fff'};border-bottom:1px solid var(--gray-100);cursor:pointer;"><div style="width:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;${avatarBg}">${initials}</div></div><div style="flex:1;padding:10px 12px 10px 0;min-width:0;"><div style="font-size:12px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.name}</div><div style="font-size:10px;color:var(--gray-400);margin-top:1px;">${equipsStr}${statesStr?' · '+statesStr:''}</div></div><div style="width:75px;padding:0 12px;font-size:11px;color:var(--gray-600);flex-shrink:0;">${c.loads||0} loads</div><div style="width:90px;padding:0 12px;font-size:11px;color:var(--gray-400);flex-shrink:0;">${relativeDate(c.lastDate)}</div><div style="width:85px;padding:0 12px;flex-shrink:0;">${statusBadge}</div></div>`;
+    html+='<div data-cid="'+c.id+'" class="carrier-dir-row"' +' style="display:flex;align-items:center;background:'+(c.id===selectedCarrierId?'var(--green-light)':'#fff')+';border-bottom:1px solid var(--gray-100);cursor:pointer;">' +'<div style="width:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;">' +'<div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;'+avatarBg+'">'+initials+'</div></div>' +'<div style="flex:1;padding:10px 12px 10px 0;min-width:0;">' +'<div style="font-size:12px;font-weight:500;color:var(--black);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+c.name+'</div>' +'<div style="font-size:10px;color:var(--gray-400);margin-top:1px;">'+equipsStr+(statesStr?' · '+statesStr:'')+'</div></div>' +'<div style="width:75px;padding:0 12px;font-size:11px;color:var(--gray-600);flex-shrink:0;">'+(c.loads||0)+' loads</div>' +'<div style="width:90px;padding:0 12px;font-size:11px;color:var(--gray-400);flex-shrink:0;">'+relativeDate(c.lastDate)+'</div>' +'<div style="width:85px;padding:0 12px;flex-shrink:0;">'+statusBadge+'</div>' +'</div>';
   }
   rowsEl.innerHTML=html;
   const totalPill=document.getElementById('carrier_total_pill');if(totalPill)totalPill.textContent=carriers.length+' carriers';
