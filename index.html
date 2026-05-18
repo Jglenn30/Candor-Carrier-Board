@@ -156,6 +156,158 @@
   .toast { position: fixed; bottom: 24px; right: 24px; background: var(--black); color: #fff; font-size: 13px; padding: 12px 18px; border-radius: var(--radius-md); z-index: 9999; opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; }
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.green { background: var(--green-dark); }
+
+  /* ─── MOBILE STYLES (screens under 768px) ─── */
+  @media (max-width: 768px) {
+
+    /* NAV */
+    .nav { padding: 0 14px; height: 48px; }
+    .nav-links { display: none; }
+    .nav-logo { font-size: 14px; }
+    .nav-user { gap: 6px; }
+    .nav-avatar { width: 24px; height: 24px; font-size: 10px; }
+    #navName { display: none; }
+
+    /* MOBILE NAV BAR at bottom */
+    .mobile-nav {
+      display: flex !important;
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      background: var(--black); border-top: 1px solid #333;
+      padding: 6px 0 10px;
+    }
+    .mobile-nav-item {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      gap: 3px; cursor: pointer; padding: 4px 0;
+    }
+    .mobile-nav-icon { font-size: 18px; }
+    .mobile-nav-label { font-size: 9px; color: var(--gray-400); letter-spacing: 0.3px; }
+    .mobile-nav-item.active .mobile-nav-label { color: var(--green); }
+    .mobile-nav-item.active .mobile-nav-icon { filter: brightness(1.3); }
+
+    /* TOOLBAR — hide on mobile, use simplified search */
+    .toolbar { display: none !important; }
+    .chip-bar { display: none !important; }
+
+    /* MOBILE TRUCK BOARD */
+    .board { padding: 10px 12px 80px; overflow-x: unset; }
+    .table-wrap { display: none; }
+    .section-divider { margin: 14px 0 6px; }
+    .divider-label { font-size: 10px; }
+
+    /* MOBILE TRUCK CARDS */
+    .mobile-truck-card {
+      background: #fff;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      box-shadow: var(--shadow);
+    }
+    .mobile-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+    .mobile-card-carrier { font-size: 14px; font-weight: 600; color: var(--black); }
+    .mobile-card-mc { font-size: 11px; color: var(--gray-400); font-family: 'DM Mono', monospace; margin-top: 2px; }
+    .mobile-card-age { font-size: 11px; font-family: 'DM Mono', monospace; flex-shrink: 0; margin-left: 8px; padding-top: 2px; }
+    .mobile-card-details { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .mobile-card-tag { font-size: 11px; padding: 2px 8px; border-radius: 20px; background: var(--gray-100); color: var(--gray-600); border: 1px solid var(--gray-200); }
+    .mobile-card-footer { display: flex; align-items: center; justify-content: space-between; }
+    .mobile-card-claimed { font-size: 11px; color: var(--blue-dark); background: var(--blue-light); padding: 2px 8px; border-radius: 20px; }
+    .mobile-claim-btn { height: 32px; padding: 0 16px; background: var(--blue-light); color: var(--blue-dark); border: 1px solid #B5D4F4; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+    .mobile-unclaim-btn { height: 32px; padding: 0 14px; background: var(--gray-100); color: var(--gray-600); border: 1px solid var(--gray-200); border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+    .mobile-covered-btn { height: 32px; padding: 0 14px; background: var(--green-light); color: var(--green-dark); border: 1px solid #C0DD97; border-radius: var(--radius-sm); font-size: 12px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+
+    /* MOBILE SEARCH BAR for board */
+    .mobile-search-bar {
+      display: flex !important;
+      padding: 8px 12px;
+      background: #fff;
+      border-bottom: 1px solid var(--gray-200);
+      gap: 8px;
+      align-items: center;
+    }
+    .mobile-search-bar input {
+      flex: 1; height: 36px; border: 1px solid var(--gray-200);
+      border-radius: var(--radius-md); padding: 0 12px;
+      font-size: 13px; font-family: 'DM Sans', sans-serif;
+      background: var(--gray-50);
+    }
+    .mobile-filter-btn {
+      height: 36px; padding: 0 12px; background: var(--gray-100);
+      border: 1px solid var(--gray-200); border-radius: var(--radius-md);
+      font-size: 12px; color: var(--gray-600); cursor: pointer;
+      font-family: 'DM Sans', sans-serif; white-space: nowrap;
+    }
+
+    /* LANE SEARCH mobile */
+    #laneSearchPage { padding-bottom: 80px; }
+    #laneSearchPage > div:first-child {
+      flex-direction: column !important;
+      padding: 12px !important;
+      gap: 8px !important;
+    }
+    #laneSearchPage > div:first-child input { width: 100% !important; }
+    #laneSearchPage > div:first-child select { width: 100% !important; }
+    #laneSearchPage > div:first-child button { width: 100% !important; height: 42px !important; }
+    #laneSearchPage > div:first-child div[style*="font-size:16px"] { display: none; }
+    #laneSearchPage > div:nth-child(2) { padding: 10px 12px !important; }
+
+    /* Lane search results - mobile cards */
+    #ls_results_rows > div { flex-wrap: wrap; }
+    #ls_history_rows > div { flex-wrap: wrap; }
+
+    /* RATE INTEL mobile */
+    #rateIntelPage { padding-bottom: 80px; }
+    #rateIntelPage > div:nth-child(2) {
+      flex-direction: column !important;
+      padding: 12px !important;
+      gap: 8px !important;
+    }
+    #rateIntelPage > div:nth-child(2) input { width: 100% !important; }
+    #rateIntelPage > div:nth-child(2) select { width: 100% !important; }
+    #rateIntelPage > div:nth-child(2) button { width: 100% !important; height: 42px !important; }
+    #rateIntelPage > div:nth-child(2) div[style*="font-size:16px"] { display: none; }
+    #rateIntelPage > div:last-child { padding: 10px 12px !important; }
+    #ri_rate_cards { grid-template-columns: 1fr 1fr !important; }
+    #ri_lane_rows > div { flex-wrap: wrap; }
+
+    /* REPORTS mobile */
+    #reportsPage { padding-bottom: 80px; }
+    #reportsPage > div:last-child { padding: 10px 12px !important; }
+    #rp_stats { grid-template-columns: 1fr 1fr !important; }
+    #rp_content > div:nth-child(2) { grid-template-columns: 1fr !important; }
+
+    /* ADMIN mobile */
+    #adminPage { padding-bottom: 80px; }
+    #adminPage > div:nth-child(2) { grid-template-columns: 1fr !important; padding: 12px !important; }
+
+    /* CARRIERS mobile */
+    #carriersPage { padding-bottom: 80px; }
+    #carriersPage > div:last-child { grid-template-columns: 1fr !important; height: auto !important; }
+    #carrier_profile_panel { display: none; }
+
+    /* CARRIER PROFILE mobile */
+    #carrierProfilePage { padding-bottom: 80px; }
+    #carrierProfilePage > div:last-child { grid-template-columns: 1fr !important; padding: 12px !important; }
+
+    /* LOGIN mobile */
+    .login-card { width: 90vw; }
+
+    /* MODALS mobile */
+    .modal { width: 94vw !important; margin: 10px; padding: 18px; }
+    .form-grid { grid-template-columns: 1fr !important; }
+    .form-group.full { grid-column: 1 !important; }
+
+    /* SYNC BAR */
+    .sync-bar { top: 48px; }
+
+    /* TOAST */
+    .toast { bottom: 80px; right: 12px; left: 12px; text-align: center; }
+  }
+
+  /* Hide mobile-only elements on desktop */
+  .mobile-nav { display: none; }
+  .mobile-search-bar { display: none; }
+  .mobile-truck-card { display: none; }
+
 </style>
 </head>
 <body>
@@ -250,6 +402,37 @@
   <span class="chip" onclick="setChip(this,'sprinter')">Sprinter</span>
   <span class="chip" onclick="setChip(this,'straight truck')">Straight truck</span>
   <span class="chip" onclick="setChip(this,'stale')">Stale only</span>
+</div>
+
+
+<!-- MOBILE BOTTOM NAV -->
+<div class="mobile-nav" id="mobileNav">
+  <div class="mobile-nav-item active" onclick="showPage('lane');setMobileNav(this)">
+    <span class="mobile-nav-icon">🔍</span>
+    <span class="mobile-nav-label">Lane</span>
+  </div>
+  <div class="mobile-nav-item" onclick="showPage('board');setMobileNav(this)">
+    <span class="mobile-nav-icon">🚛</span>
+    <span class="mobile-nav-label">Board</span>
+  </div>
+  <div class="mobile-nav-item" onclick="showPage('rate');setMobileNav(this)">
+    <span class="mobile-nav-icon">💰</span>
+    <span class="mobile-nav-label">Rates</span>
+  </div>
+  <div class="mobile-nav-item" onclick="showPage('carriers');renderCarrierDirectory();setMobileNav(this)">
+    <span class="mobile-nav-icon">📋</span>
+    <span class="mobile-nav-label">Carriers</span>
+  </div>
+  <div class="mobile-nav-item" onclick="showPage('admin');setMobileNav(this)">
+    <span class="mobile-nav-icon">⚙️</span>
+    <span class="mobile-nav-label">Admin</span>
+  </div>
+</div>
+
+<!-- MOBILE SEARCH BAR for board -->
+<div class="mobile-search-bar" id="mobileSearchBar" style="display:none;">
+  <input type="text" placeholder="Search carriers..." id="mobileSearchInput" oninput="document.getElementById('searchInput').value=this.value;renderBoard(null);" />
+  <button class="mobile-filter-btn" onclick="openModal('truck')">+ Add</button>
 </div>
 
 <!-- BOARD -->
@@ -1606,13 +1789,30 @@ function showPage(page){
   if(toolbar)toolbar.style.display='none';if(chipBar)chipBar.style.display='none';
   if(page==='board'){const el=document.getElementById('boardArea');if(el)el.style.display='';if(toolbar)toolbar.style.display='';if(chipBar)chipBar.style.display='';}
   else{const el=document.getElementById(page==='lane'?'laneSearchPage':page==='admin'?'adminPage':page==='carriers'?'carriersPage':page==='carrier'?'carrierProfilePage':page==='rate'?'rateIntelPage':page==='reports'?'reportsPage':'boardArea');if(el)el.style.display='';}
+  // Desktop nav
   document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
   const navMap={lane:0,board:1,carriers:2,carrier:2,rate:3,reports:4,admin:5};
   const navIdx=navMap[page];if(navIdx!==undefined)document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
+  // Mobile nav
+  const mobileNavMap={lane:0,board:1,rate:2,carriers:3,carrier:3,admin:4,reports:4};
+  const mobileItems=document.querySelectorAll('.mobile-nav-item');
+  mobileItems.forEach(i=>i.classList.remove('active'));
+  const mobileIdx=mobileNavMap[page];
+  if(mobileIdx!==undefined&&mobileItems[mobileIdx])mobileItems[mobileIdx].classList.add('active');
+  // Mobile search bar visibility
+  const msb=document.getElementById('mobileSearchBar');
+  if(msb)msb.style.display=(page==='board'&&window.innerWidth<=768)?'flex':'none';
+  // Page-specific actions
   if(page==='reports')renderReports();
   if(page==='rate')renderReports();
   if(page==='admin')updateHistoryStats().catch(()=>{});
-  if(page==='board'){cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderBoard(null);}):renderBoard(null);}
+  if(page==='board'){
+    if(window.innerWidth<=768){
+      cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderMobileBoard();}):renderMobileBoard();
+    }else{
+      cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderBoard(null);}):renderBoard(null);
+    }
+  }
 }
 
 
@@ -1700,6 +1900,86 @@ async function init(){
   subscribeRealtime();
   setInterval(async()=>{cachedTrucks=await dbLoadTrucks();renderBoard(null);},30000);
 }
+
+
+// ── MOBILE HELPERS ──
+function isMobile(){ return window.innerWidth <= 768; }
+
+function setMobileNav(el){
+  document.querySelectorAll('.mobile-nav-item').forEach(i=>i.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function renderMobileBoard(){
+  const trucks = cachedTrucks;
+  const searchVal = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = trucks.filter(t => {
+    if(chipFilter==='stale'&&group(t.posted)!=='stale')return false;
+    if(chipFilter&&chipFilter!=='stale'&&!t.equip.toLowerCase().includes(chipFilter))return false;
+    if(searchVal&&!t.carrier.toLowerCase().includes(searchVal))return false;
+    return true;
+  });
+
+  const groups={fresh:[],aging:[],stale:[]};
+  filtered.forEach(t=>groups[group(t.posted)].push(t));
+
+  const meta={
+    fresh:{label:'Fresh — posted today',dot:'dot-green'},
+    aging:{label:'Aging — posted yesterday',dot:'dot-yellow'},
+    stale:{label:'Stale — 48hrs+',dot:'dot-red'}
+  };
+
+  let html='';
+  for(const[key,m]of Object.entries(meta)){
+    if(!groups[key].length)continue;
+    html+='<div class="section-divider'+(html?'section-gap':'')+'">'
+      +'<div class="divider-label"><span class="dot '+m.dot+'" style="width:7px;height:7px;"></span>'+m.label+'</div>'
+      +'<div class="divider-line"></div>'
+      +'<div class="divider-count">'+groups[key].length+'</div></div>';
+    for(const t of groups[key]){
+      const isMine=t.claimedBy===currentUser;
+      const claimed=t.claimedBy!=='';
+      let actionHtml='';
+      if(claimed&&isMine){
+        actionHtml='<span class="mobile-card-claimed">'+t.claimedBy+'</span>'
+          +'<button class="mobile-unclaim-btn" onclick="unclaim('+t.id+');renderBoardSmart()">Unclaim</button>';
+      }else if(claimed){
+        actionHtml='<span class="mobile-card-claimed">'+t.claimedBy+'</span>';
+      }else{
+        actionHtml='<button class="mobile-claim-btn" onclick="claim('+t.id+');renderBoardSmart()">Claim</button>'
+          +'<button class="mobile-covered-btn" onclick="markCovered('+t.id+')">Covered</button>';
+      }
+      html+='<div class="mobile-truck-card" style="display:block;">'
+        +'<div class="mobile-card-header">'
+        +'<div><div class="mobile-card-carrier">'+t.carrier+'</div>'
+        +'<div class="mobile-card-mc">'+t.mc+' · '+t.phone+'</div></div>'
+        +'<div class="mobile-card-age '+ageClass(t.posted)+'">'+ageLabel(t.posted)+'</div>'
+        +'</div>'
+        +'<div class="mobile-card-details">'
+        +'<span class="mobile-card-tag">'+t.equip+'</span>'
+        +'<span class="mobile-card-tag">'+t.city+', '+t.state+'</span>'
+        +'<span class="badge '+(t.status==='Available'?'badge-avail':'badge-contact')+'">'+t.status+'</span>'
+        +(t.notes?'<span class="mobile-card-tag" style="font-style:italic;color:var(--gray-400);">'+t.notes+'</span>':'')
+        +'</div>'
+        +'<div class="mobile-card-footer">'+actionHtml+'</div>'
+        +'</div>';
+    }
+  }
+
+  if(!filtered.length) html='<div style="text-align:center;padding:40px;color:var(--gray-400);font-size:13px;">No trucks on the board.</div>';
+  document.getElementById('boardArea').innerHTML=html;
+  document.getElementById('totalCount').textContent=filtered.filter(t=>group(t.posted)==='fresh').length;
+}
+
+async function renderBoardSmart(){
+  if(isMobile()){
+    renderMobileBoard();
+  }else{
+    await renderBoard(null);
+  }
+}
+
+
 
 document.addEventListener('DOMContentLoaded',function(){init();initNav();});
 </script>
