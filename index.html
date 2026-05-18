@@ -1368,27 +1368,31 @@ async function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
       const originSt=((origin.match(/,\s*([A-Z]{2})/i)||[])[1]||'').toUpperCase();
       const searchCoords=getCityCoords(originCity,originSt)||GEO_CACHE[(originCity+' '+originSt).toLowerCase()];
 
+      // Use a generous radius for history (always show carriers within 300mi of search city)
+      const historyRadius = Math.max(radius === 9999 ? 9999 : radius, 300);
+
       const matches=history.filter(s=>{
         // Destination filter
         const d=(s.dest||'').toLowerCase();
         const destMatch=!dest||d.includes(dest.split(',')[0].trim().toLowerCase());
         if(!destMatch)return false;
 
-        // Origin matching — use radius if we have coords, otherwise fall back to text
-        if(searchCoords&&radius&&radius!==9999){
+        // Origin matching — use radius if we have coords
+        if(searchCoords){
           const oParts=(s.origin||'').match(/([^,]+),\s*([A-Z]{2})/i);
           if(oParts){
-            const oCoords=getCityCoords(oParts[1].trim(),oParts[2].trim().toUpperCase())
-              ||GEO_CACHE[(oParts[1].trim()+' '+oParts[2].trim()).toLowerCase()];
+            const oCity=oParts[1].trim();
+            const oState=oParts[2].trim().toUpperCase();
+            const oCoords=getCityCoords(oCity,oState)||GEO_CACHE[(oCity+' '+oState).toLowerCase()];
             if(oCoords){
               const dist=haversine(searchCoords[0],searchCoords[1],oCoords[0],oCoords[1]);
-              return dist<=radius;
+              return historyRadius===9999||dist<=historyRadius;
             }
+            // No coords for this city — include if same state
+            return oState===originSt;
           }
-          // Coords not found — fall back to state match
-          return (s.origin||'').toUpperCase().includes(originSt||originCity.toUpperCase());
         }
-        // No coords — text match
+        // No search coords — text match on city name
         return(s.origin||'').toLowerCase().includes(originCity.toLowerCase());
       });
       if(!matches.length){histRowsEl.innerHTML='<div style="padding:20px;text-align:center;font-size:13px;color:var(--gray-400);">No history found for this lane</div>';}
