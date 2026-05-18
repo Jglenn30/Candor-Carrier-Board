@@ -1361,7 +1361,7 @@ async function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
   }
   const histRowsEl=document.getElementById('ls_history_rows');
   if(histRowsEl){
-    const history=getHistory();
+    const history=await getHistory();
     if(!history.length){histRowsEl.innerHTML='<div style="padding:20px 16px;"><div style="font-size:13px;font-weight:500;color:var(--black);margin-bottom:3px;">No history loaded</div><div style="font-size:12px;color:var(--gray-400);">Upload your TMS export in Admin to unlock carrier lane history.</div><div style="margin-top:8px;"><span onclick="showPage(\'admin\')" style="font-size:12px;color:var(--green);cursor:pointer;font-weight:500;">Upload shipment history →</span></div></div>';}
     else{
       const originCity=origin.split(',')[0].trim();
