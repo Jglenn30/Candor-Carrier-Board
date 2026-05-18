@@ -1464,6 +1464,24 @@ async function runLaneSearch(){
 }
 
 
+// ── PAGE SWITCHING ──
+function showPage(page){
+  const pages=['boardArea','adminPage','laneSearchPage','carriersPage','carrierProfilePage','rateIntelPage','reportsPage'];
+  pages.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+  const toolbar=document.querySelector('.toolbar'),chipBar=document.querySelector('.chip-bar');
+  if(toolbar)toolbar.style.display='none';if(chipBar)chipBar.style.display='none';
+  if(page==='board'){const el=document.getElementById('boardArea');if(el)el.style.display='';if(toolbar)toolbar.style.display='';if(chipBar)chipBar.style.display='';}
+  else{const el=document.getElementById(page==='lane'?'laneSearchPage':page==='admin'?'adminPage':page==='carriers'?'carriersPage':page==='carrier'?'carrierProfilePage':page==='rate'?'rateIntelPage':page==='reports'?'reportsPage':'boardArea');if(el)el.style.display='';}
+  document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));
+  const navMap={lane:0,board:1,carriers:2,carrier:2,rate:3,reports:4,admin:5};
+  const navIdx=navMap[page];if(navIdx!==undefined)document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
+  if(page==='reports')renderReports();
+  if(page==='rate')renderReports();
+  if(page==='admin')updateHistoryStats().catch(()=>{});
+  if(page==='board'){cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderBoard(null);}):renderBoard(null);}
+}
+
+
 // ── CARRIERS PAGE ──
 let selectedCarrierId=null;
 function relativeDate(dateStr){if(!dateStr)return'—';const d=new Date(dateStr);if(isNaN(d))return dateStr;const days=Math.floor((Date.now()-d)/86400000);if(days===0)return'Today';if(days===1)return'Yesterday';if(days<7)return days+' days ago';if(days<30)return Math.floor(days/7)+' weeks ago';return Math.floor(days/30)+'+ months ago';}
