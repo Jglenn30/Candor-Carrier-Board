@@ -454,31 +454,43 @@ async function getHistory() {
   setSyncing('');
   if (error) { console.error('Load history:', error); return []; }
   cachedHistory = (data || []).map(r => ({
-    id: r.id, carrier: r.carrier, origin: r.origin, dest: r.dest,
-    date: r.date, delivDate: r.deliv_date, carrierCost: r.carrier_cost,
-    custCost: r.cust_cost, equip: r.equip, netRevenue: r.net_revenue, margin: (r.cust_cost>0?((r.cust_cost-r.carrier_cost)/r.cust_cost*100):0)
+    id: r['Shipment ID'], carrier: r['Carrier'], origin: r['Origin'], dest: r['Destination'],
+    date: r['Actual Pickup Date'], delivDate: r['Delivery appointment date'],
+    carrierCost: parseFloat(r['Carrier Costs'])||0,
+    custCost: parseFloat(r['Customer Costs'])||0,
+    equip: r['Equipment needed']||'',
+    netRevenue: parseFloat(r['Net revenue'])||0,
+    margin: parseFloat(r['Margin %'])||0
   }));
   return cachedHistory;
 }
 
 async function dbSaveShipments(shipments) {
-  // Build rows with guaranteed unique IDs
+  if (!shipments.length) return 0;
+
+  // Map directly to TMS column names
   const rows = shipments.map((s, idx) => ({
-    id: String(s.id && String(s.id).trim() ? String(s.id).trim() : (s.carrier||'x') + '|' + (s.origin||'x') + '|' + (s.date||'x') + '|' + idx),
-    carrier: s.carrier||'', origin: s.origin||'', dest: s.dest||'',
-    date: s.date||'', deliv_date: s.delivDate||'',
-    carrier_cost: parseFloat(s.carrierCost)||0, cust_cost: parseFloat(s.custCost)||0,
-    equip: s.equip||''
+    'Shipment ID': String(s.id && String(s.id).trim() ? String(s.id).trim() : (s.carrier||'x')+'|'+(s.origin||'x')+'|'+(s.date||'x')+'|'+idx),
+    'Actual Pickup Date': s.date||'',
+    'Delivery appointment date': s.delivDate||'',
+    'Delivery scheduling type': '',
+    'Equipment needed': s.equip||'',
+    'Origin': s.origin||'',
+    'Destination': s.dest||'',
+    'Carrier': s.carrier||'',
+    'Carrier Codes': '',
+    'Carrier Costs': parseFloat(s.carrierCost)||0,
+    'Customer Costs': parseFloat(s.custCost)||0,
+    'Net revenue': parseFloat(s.netRevenue)||0,
+    'Margin %': parseFloat(s.margin)||0
   }));
 
-  if (!rows.length) return 0;
-
-  // Insert in batches of 100 using upsert to handle any duplicate IDs gracefully
+  // Insert in batches of 100
   const batchSize = 100;
   let saved = 0;
   for (let i = 0; i < rows.length; i += batchSize) {
     const batch = rows.slice(i, i + batchSize);
-    const { data, error } = await sb.from('shipments').upsert(batch, { onConflict: 'id', ignoreDuplicates: true }).select('id');
+    const { data, error } = await sb.from('shipments').upsert(batch, { onConflict: 'Shipment ID', ignoreDuplicates: true }).select('"Shipment ID"');
     if (error) {
       console.error('Batch error at row', i, ':', error.message);
     } else {
