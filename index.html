@@ -444,9 +444,42 @@ function subscribeRealtime() {
     .subscribe();
 }
 
-// ── LOCAL HISTORY (stays per-user, too large for DB) ──
-function getHistory() {
-  try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]'); } catch(e) { return []; }
+// ── SHIPMENT HISTORY (Supabase — shared across all users) ──
+let cachedHistory = null;
+
+async function getHistory() {
+  if (cachedHistory !== null) return cachedHistory;
+  setSyncing('syncing');
+  const { data, error } = await sb.from('shipments').select('*');
+  setSyncing('');
+  if (error) { console.error('Load history:', error); return []; }
+  cachedHistory = (data || []).map(r => ({
+    id: r.id, carrier: r.carrier, origin: r.origin, dest: r.dest,
+    date: r.date, delivDate: r.deliv_date, carrierCost: r.carrier_cost,
+    custCost: r.cust_cost, equip: r.equip, netRevenue: r.net_revenue, margin: r.margin
+  }));
+  return cachedHistory;
+}
+
+async function dbSaveShipments(shipments) {
+  const { data: existing } = await sb.from('shipments').select('id');
+  const existingIds = new Set((existing||[]).map(r => r.id).filter(Boolean));
+  const newShipments = shipments.filter(s => !s.id || !existingIds.has(String(s.id)));
+  if (!newShipments.length) return 0;
+  const batchSize = 500;
+  for (let i = 0; i < newShipments.length; i += batchSize) {
+    const batch = newShipments.slice(i, i + batchSize).map((s, idx) => ({
+      id: String(s.id || (s.carrier + '|' + s.origin + '|' + s.date + '|' + (i+idx))),
+      carrier: s.carrier||'', origin: s.origin||'', dest: s.dest||'',
+      date: s.date||'', deliv_date: s.delivDate||s.deliverDate||'',
+      carrier_cost: s.carrierCost||0, cust_cost: s.custCost||0,
+      equip: s.equip||'', net_revenue: s.netRevenue||0, margin: s.margin||0
+    }));
+    const { error } = await sb.from('shipments').upsert(batch, { onConflict: 'id' });
+    if (error) console.error('Save shipments batch:', error);
+  }
+  cachedHistory = null;
+  return newShipments.length;
 }
 
 // ── USERS ──
@@ -804,17 +837,15 @@ function handleHistoryFile(file) {
         if(progressBar)progressBar.style.width='80%';
         if(progressTxt)progressTxt.textContent='Saving '+shipments.length+' shipments...';
         setTimeout(async()=>{
-          const existing=getHistory();
-          const existingIds=new Set(existing.map(s=>s.id).filter(Boolean));
-          const newShipments=shipments.filter(s=>!s.id||!existingIds.has(s.id));
-          const merged=[...existing,...newShipments];
-          localStorage.setItem(HISTORY_KEY,JSON.stringify(merged));
-          localStorage.setItem('candor_history_date',new Date().toLocaleDateString());
+          if(progressTxt)progressTxt.textContent='Saving to Supabase...';
+          if(progressBar)progressBar.style.width='80%';
+          const added = await dbSaveShipments(shipments);
           if(progressBar)progressBar.style.width='100%';
-          if(progressTxt)progressTxt.textContent='✓ Added '+newShipments.length.toLocaleString()+' new shipments ('+merged.length.toLocaleString()+' total)';
-          updateHistoryStats();
+          if(progressTxt)progressTxt.textContent='✓ Added '+added.toLocaleString()+' new shipments to shared database';
+          localStorage.setItem('candor_history_date',new Date().toLocaleDateString());
+          await updateHistoryStats();
           await processInboundFromUpload(shipments);
-          showToast('Added '+newShipments.length.toLocaleString()+' new shipments','green');
+          showToast('Added '+added.toLocaleString()+' new shipments','green');
           setTimeout(()=>{if(progress)progress.style.display='none';},3000);
         },200);
       }catch(err){
@@ -880,19 +911,23 @@ function parseCSVRow(line) {
   result.push(current); return result;
 }
 
-function updateHistoryStats() {
-  const history=getHistory();
-  const lastDate=localStorage.getItem('candor_history_date')||'—';
+async function updateHistoryStats() {
+  const history = await getHistory();
+  const lastDate = localStorage.getItem('candor_history_date')||'—';
   const countEl=document.getElementById('sh_count'),lastEl=document.getElementById('sh_last_import'),badge=document.getElementById('sh_badge');
   if(countEl)countEl.textContent=history.length.toLocaleString();
   if(lastEl)lastEl.textContent=lastDate;
   if(badge){badge.textContent=history.length.toLocaleString()+' loaded';badge.style.background='var(--green-light)';badge.style.color='var(--green-dark)';}
 }
 
-function clearHistory() {
-  if(!confirm('Clear all shipment history data? This cannot be undone.'))return;
-  localStorage.removeItem(HISTORY_KEY);localStorage.removeItem('candor_history_date');
-  updateHistoryStats();showToast('History cleared');
+async function clearHistory() {
+  if(!confirm('Clear all shipment history data for everyone? This cannot be undone.'))return;
+  const { error } = await sb.from('shipments').delete().neq('id','');
+  if(error){showToast('Error clearing history');return;}
+  cachedHistory = null;
+  localStorage.removeItem('candor_history_date');
+  await updateHistoryStats();
+  showToast('History cleared');
 }
 
 async function processInboundFromUpload(shipments) {
@@ -1098,8 +1133,8 @@ async function renderCarrierProfile(carrierId){
 
 function getCarrierLastPost(name){const trucks=cachedTrucks;const match=trucks.filter(t=>t.carrier.toLowerCase()===name.toLowerCase());if(!match.length)return null;match.sort((a,b)=>b.posted-a.posted);const hrs=Math.floor((Date.now()-match[0].posted)/3600000);return hrs<1?'Just now':hrs<24?hrs+'h ago':Math.floor(hrs/24)+'d ago';}
 
-function renderCarrierStats(name){
-  const history=getHistory();
+async function renderCarrierStats(name){
+  const history=await getHistory();
   const carLoads=history.filter(s=>s.carrier&&s.carrier.toLowerCase().includes(name.toLowerCase()));
   const statLoads=document.getElementById('cp_stat_loads'),statRpm=document.getElementById('cp_stat_rpm'),statPaid=document.getElementById('cp_stat_paid'),statLast=document.getElementById('cp_stat_last');
   if(!carLoads.length){if(statLoads)statLoads.textContent='0';if(statRpm)statRpm.textContent='—';if(statPaid)statPaid.textContent='—';if(statLast)statLast.textContent='—';return;}
@@ -1163,8 +1198,8 @@ function setReportPeriod(el,days){reportDays=days;document.querySelectorAll('.rp
 
 function parseMoneySafe(val){if(!val)return 0;return parseFloat(String(val).replace(/[^0-9.-]/g,''))||0;}
 
-function renderReports(){
-  const allHistory=getHistory();const history=filterByDays(allHistory,reportDays);
+async function renderReports(){
+  const allHistory=await getHistory();const history=filterByDays(allHistory,reportDays);
   const placeholder=document.getElementById('rp_placeholder'),content=document.getElementById('rp_content');
   if(!allHistory.length){if(placeholder)placeholder.style.display='';if(content)content.style.display='none';return;}
   if(placeholder)placeholder.style.display='none';if(content){content.style.display='flex';}
@@ -1187,11 +1222,11 @@ function renderReports(){
   if(marketsEl)marketsEl.innerHTML=topMarkets.map(([city,count])=>`<div style="padding:10px 16px;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;"><div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:500;color:var(--black);">${city}</div><div style="height:4px;background:var(--gray-100);border-radius:2px;margin-top:4px;overflow:hidden;"><div style="height:100%;border-radius:2px;background:var(--blue);width:${Math.round((count/maxMkt)*100)}%;"></div></div></div><div style="font-size:12px;color:var(--gray-600);flex-shrink:0;">${count} loads</div></div>`).join('');
 }
 
-function runRateSearch(){
+async function runRateSearch(){
   const origin=(document.getElementById('ri_origin')||{value:''}).value.trim();
   const dest=(document.getElementById('ri_dest')||{value:''}).value.trim();
   if(!origin){showToast('Enter an origin to search');return;}
-  const history=getHistory();
+  const history=await getHistory();
   if(!history.length){showToast('No shipment history loaded — upload your TMS export first');showPage('admin');return;}
   const matches=history.filter(s=>{const o=(s.origin||'').toLowerCase(),d=(s.dest||s.destination||'').toLowerCase();return o.includes(origin.toLowerCase())&&(!dest||d.includes(dest.toLowerCase()));});
   const placeholder=document.getElementById('ri_placeholder'),results=document.getElementById('ri_results');
@@ -1262,7 +1297,7 @@ async function runLaneSearch(){
   renderLaneResults(results,originRaw,destRaw,radius,inboundResults);
 }
 
-function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
+async function renderLaneResults(trucks,origin,dest,radius,inboundTrucks){
   inboundTrucks=inboundTrucks||[];
   const placeholder=document.getElementById('ls_placeholder'),resultsSec=document.getElementById('ls_results_section'),resultCount=document.getElementById('ls_result_count'),resultsRows=document.getElementById('ls_results_rows');
   if(placeholder)placeholder.style.display='none';
@@ -1314,7 +1349,7 @@ function showPage(page){
   const navIdx=navMap[page];if(navIdx!==undefined)document.querySelectorAll('.nav-link')[navIdx].classList.add('active');
   if(page==='reports')renderReports();
   if(page==='rate')renderReports();
-  if(page==='admin')updateHistoryStats();
+  if(page==='admin')updateHistoryStats().catch(()=>{});
   if(page==='board'){cachedTrucks.length===0?dbLoadTrucks().then(t=>{cachedTrucks=t;renderBoard(null);}):renderBoard(null);}
 }
 
@@ -1327,7 +1362,7 @@ async function renderCarrierDirectory(){
   const equipFilt=(document.getElementById('carrier_equip_filter')||{value:''}).value.toLowerCase();
   const statusFilt=(document.getElementById('carrier_status_filter')||{value:''}).value;
   const sortVal=(document.getElementById('carrier_sort')||{value:'loads'}).value;
-  const history=getHistory();const carriers_db=await getCarriers();
+  const history=await getHistory();const carriers_db=await getCarriers();
   const dirMap={};
   for(const s of history){const name=(s.carrier||'').split(',')[0].trim();if(!name||name==='-')continue;const id=carrierIdFromName(name);if(!dirMap[id])dirMap[id]={id,name,loads:0,totalPay:0,equips:new Set(),states:new Set(),lastDate:'',sources:new Set()};dirMap[id].loads++;dirMap[id].totalPay+=s.carrierCost||0;if(s.equip&&s.equip.trim()&&s.equip.trim()!=='-')dirMap[id].equips.add(s.equip.trim());if(s.origin){const m=s.origin.match(/,\s*([A-Z]{2})/i);if(m)dirMap[id].states.add(m[1].toUpperCase());}if(!dirMap[id].lastDate||new Date(s.date)>new Date(dirMap[id].lastDate))dirMap[id].lastDate=s.date;dirMap[id].sources.add('history');}
   for(const t of cachedTrucks){const name=(t.carrier||'').trim();if(!name)continue;const id=carrierIdFromName(name);if(!dirMap[id])dirMap[id]={id,name,loads:0,totalPay:0,equips:new Set(),states:new Set(),lastDate:'',sources:new Set()};if(t.equip)dirMap[id].equips.add(t.equip);if(t.state)dirMap[id].states.add(t.state);if(!dirMap[id].mc&&t.mc&&t.mc!=='—')dirMap[id].mc=t.mc;dirMap[id].sources.add('board');}
